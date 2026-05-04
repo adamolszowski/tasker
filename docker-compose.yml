@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: tasker_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    networks:
+      - tasker_net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tasker_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - tasker_net
+
+  backend:
+    build:
+      context: ./backend
+    container_name: tasker_backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT}:5000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      BACKEND_PORT: 5000
+    networks:
+      - tasker_net
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: tasker_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT}:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    networks:
+      - tasker_net
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  tasker_net:
+    driver: bridge
