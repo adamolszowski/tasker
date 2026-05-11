@@ -142,6 +142,163 @@ async function findUserWithRoleById(userId) {
   return rows[0] || null;
 }
 
+async function findPendingUsers() {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      id,
+      login,
+      first_name,
+      last_name,
+      email,
+      phone,
+      role_id,
+      approved_by_user_id,
+      approved_at,
+      created_at
+    FROM users
+    WHERE role_id IS NULL
+    ORDER BY created_at ASC
+    `
+  );
+
+  return rows;
+}
+
+// Role, które można nadać nowemu użytkownikowi przy aktywacji
+const ALLOWED_APPROVAL_ROLES = ["pracownik", "kierownik", "administrator"];
+
+function validateApproveRoleInput(body) {
+  const role = typeof body.role === "string" ? body.role.trim() : "";
+
+  // Rola musi być podana
+  if (!role) {
+    return { error: "Rola jest wymagana." };
+  }
+
+  // Sprawdzamy, czy rola należy do dozwolonych
+  if (!ALLOWED_APPROVAL_ROLES.includes(role)) {
+    return {
+      error:
+        "Nieprawidłowa rola. Dozwolone: pracownik, kierownik, administrator.",
+    };
+  }
+
+  return {
+    data: { role },
+  };
+}
+
+// Role, które można ustawiać przy zmianie roli istniejącego usera
+const MANAGEABLE_ROLES = ["pracownik", "kierownik", "administrator"];
+
+async function findActiveUsers() {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.login,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.role_id,
+      u.approved_by_user_id,
+      u.approved_at,
+      u.created_at,
+      r.name AS role_name
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    ORDER BY u.created_at ASC
+    `
+  );
+
+  return rows;
+}
+
+async function findUsersForDirectory() {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      r.name AS role_name
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    ORDER BY u.last_name ASC NULLS LAST, u.first_name ASC NULLS LAST, u.id ASC
+    `
+  );
+
+  return rows;
+}
+
+async function findUserWithRoleByIdForAdmin(userId, transaction = null) {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.login,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.role_id,
+      u.approved_by_user_id,
+      u.approved_at,
+      u.created_at,
+      r.name AS role_name
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE u.id = :userId
+    LIMIT 1
+    `,
+    {
+      replacements: { userId },
+      transaction,
+    }
+  );
+
+  return rows[0] || null;
+}
+
+function validateManageRoleInput(body) {
+  const role = typeof body.role === "string" ? body.role.trim() : "";
+
+  if (!role) {
+    return { error: "Rola jest wymagana." };
+  }
+
+  if (!MANAGEABLE_ROLES.includes(role)) {
+    return {
+      error:
+        "Nieprawidłowa rola. Dozwolone: pracownik, kierownik, administrator.",
+    };
+  }
+
+  return {
+    data: { role },
+  };
+}
+
+function canManageTargetUser(actorRole, targetRole) {
+  // Superadmin może zarządzać wszystkimi poza samym superadminem
+  if (actorRole === "superadmin") {
+    return targetRole !== "superadmin";
+  }
+
+  // Administrator nie może zarządzać administratorem ani superadminem
+  if (actorRole === "administrator") {
+    return targetRole !== "administrator" && targetRole !== "superadmin";
+  }
+
+  return false;
+}
+
+
+
 function validateRegisterInput(body) {
   // login i hasło są wymagane,
   // dlatego jeśli pole nie jest tekstem, ustawiamy pusty string.
@@ -269,6 +426,28 @@ function requireAuth(req, res, next) {
       message: "Token jest nieprawidłowy lub wygasł.",
     });
   }
+}
+
+function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    // Jeśli wcześniej middleware requireAuth nie ustawił req.auth,
+    // to znaczy, że nie mamy danych o zalogowanym userze
+    if (!req.auth || !req.auth.role) {
+      return res.status(403).json({
+        message: "Brak informacji o roli użytkownika.",
+      });
+    }
+
+    // Sprawdzamy, czy rola usera znajduje się na liście dozwolonych ról
+    if (!allowedRoles.includes(req.auth.role)) {
+      return res.status(403).json({
+        message: "Brak uprawnień do wykonania tej operacji.",
+      });
+    }
+
+    // Jeśli wszystko się zgadza, przekazujemy request dalej
+    next();
+  };
 }
 
 // Tworzymy połączenie z bazą danych PostgreSQL przez Sequelize
@@ -642,6 +821,350 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
     });
   }
 });
+
+app.get(
+  "/api/admin/pending-users",
+  requireAuth,
+  requireRole("superadmin"),
+  async (req, res) => {
+    try {
+      const users = await findPendingUsers();
+
+      return res.status(200).json({
+        users,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Błąd podczas pobierania użytkowników oczekujących.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/users/:id/approve-role",
+  requireAuth,
+  requireRole("superadmin"),
+  async (req, res) => {
+    // Najpierw sprawdzamy, czy body zawiera poprawną rolę
+    const validation = validateApproveRoleInput(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({
+        message: validation.error,
+      });
+    }
+
+    // ID usera pobieramy z parametru URL
+    const userId = Number(req.params.id);
+    const { role } = validation.data;
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({
+        message: "Nieprawidłowe ID użytkownika.",
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      // Szukamy usera po ID
+      const [targetUsers] = await sequelize.query(
+        `
+        SELECT id, login, role_id, approved_at
+        FROM users
+        WHERE id = :userId
+        LIMIT 1
+        `,
+        {
+          replacements: { userId },
+          transaction,
+        }
+      );
+
+      const targetUser = targetUsers[0];
+
+      // Jeśli user nie istnieje
+      if (!targetUser) {
+        await transaction.rollback();
+        return res.status(404).json({
+          message: "Użytkownik nie istnieje.",
+        });
+      }
+
+      // Jeśli user już ma rolę, to nie jest kontem oczekującym
+      if (targetUser.role_id !== null) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message: "Ten użytkownik ma już przypisaną rolę.",
+        });
+      }
+
+      // Nadajemy rolę i zapisujemy kto to zatwierdził
+      const [updatedUsers] = await sequelize.query(
+        `
+        UPDATE users
+        SET
+          role_id = (SELECT id FROM roles WHERE name = :role),
+          approved_by_user_id = :approvedByUserId,
+          approved_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = :userId
+        RETURNING id, login, role_id, approved_by_user_id, approved_at
+        `,
+        {
+          replacements: {
+            userId,
+            role,
+            approvedByUserId: req.auth.sub,
+          },
+          transaction,
+        }
+      );
+
+      await transaction.commit();
+
+      return res.status(200).json({
+        message: "Rola została nadana użytkownikowi.",
+        user: updatedUsers[0],
+      });
+    } catch (error) {
+      await transaction.rollback();
+
+      return res.status(500).json({
+        message: "Błąd podczas nadawania roli użytkownikowi.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/active-users",
+  requireAuth,
+  requireRole("administrator", "superadmin"),
+  async (req, res) => {
+    try {
+      const users = await findActiveUsers();
+
+      return res.status(200).json({
+        users,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Błąd podczas pobierania aktywnych użytkowników.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/users/:id/change-role",
+  requireAuth,
+  requireRole("administrator", "superadmin"),
+  async (req, res) => {
+    const validation = validateManageRoleInput(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({
+        message: validation.error,
+      });
+    }
+
+    const userId = Number(req.params.id);
+    const { role } = validation.data;
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({
+        message: "Nieprawidłowe ID użytkownika.",
+      });
+    }
+
+    // Nie pozwalamy zmieniać własnej roli tym endpointem
+    if (req.auth.sub === userId) {
+      return res.status(409).json({
+        message: "Nie można zmieniać własnej roli tym endpointem.",
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      const targetUser = await findUserWithRoleByIdForAdmin(userId, transaction);
+
+      if (!targetUser) {
+        await transaction.rollback();
+        return res.status(404).json({
+          message: "Użytkownik nie istnieje.",
+        });
+      }
+
+      // Jeśli user nie ma jeszcze roli, to trzeba użyć approve-role
+      if (!targetUser.role_id || !targetUser.role_name) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message:
+            "Ten użytkownik nie ma jeszcze przypisanej roli. Użyj aktywacji konta.",
+        });
+      }
+
+      // Sprawdzamy, czy zalogowany user może zarządzać takim targetem
+      if (!canManageTargetUser(req.auth.role, targetUser.role_name)) {
+        await transaction.rollback();
+        return res.status(403).json({
+          message: "Brak uprawnień do zmiany roli tego użytkownika.",
+        });
+      }
+
+      // Jeśli rola jest taka sama jak obecna, nie ma sensu robić update
+      if (targetUser.role_name === role) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message: "Użytkownik ma już przypisaną tę rolę.",
+        });
+      }
+
+      const [updatedUsers] = await sequelize.query(
+        `
+        UPDATE users
+        SET
+          role_id = (SELECT id FROM roles WHERE name = :role),
+          approved_by_user_id = :approvedByUserId,
+          approved_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = :userId
+        RETURNING id, login, role_id, approved_by_user_id, approved_at
+        `,
+        {
+          replacements: {
+            userId,
+            role,
+            approvedByUserId: req.auth.sub,
+          },
+          transaction,
+        }
+      );
+
+      await transaction.commit();
+
+      return res.status(200).json({
+        message: "Rola użytkownika została zmieniona.",
+        user: updatedUsers[0],
+      });
+    } catch (error) {
+      await transaction.rollback();
+
+      return res.status(500).json({
+        message: "Błąd podczas zmiany roli użytkownika.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/users/:id/revoke-role",
+  requireAuth,
+  requireRole("administrator", "superadmin"),
+  async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({
+        message: "Nieprawidłowe ID użytkownika.",
+      });
+    }
+
+    // Nie pozwalamy odebrać własnej roli tym endpointem
+    if (req.auth.sub === userId) {
+      return res.status(409).json({
+        message: "Nie można odebrać własnej roli tym endpointem.",
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      const targetUser = await findUserWithRoleByIdForAdmin(userId, transaction);
+
+      if (!targetUser) {
+        await transaction.rollback();
+        return res.status(404).json({
+          message: "Użytkownik nie istnieje.",
+        });
+      }
+
+      // Jeśli user już nie ma roli, to nie ma czego odbierać
+      if (!targetUser.role_id || !targetUser.role_name) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message: "Ten użytkownik nie ma przypisanej roli.",
+        });
+      }
+
+      // Sprawdzamy uprawnienia
+      if (!canManageTargetUser(req.auth.role, targetUser.role_name)) {
+        await transaction.rollback();
+        return res.status(403).json({
+          message: "Brak uprawnień do odebrania roli temu użytkownikowi.",
+        });
+      }
+
+      const [updatedUsers] = await sequelize.query(
+        `
+        UPDATE users
+        SET
+          role_id = NULL,
+          approved_by_user_id = NULL,
+          approved_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = :userId
+        RETURNING id, login, role_id, approved_by_user_id, approved_at
+        `,
+        {
+          replacements: { userId },
+          transaction,
+        }
+      );
+
+      await transaction.commit();
+
+      return res.status(200).json({
+        message: "Rola została odebrana użytkownikowi.",
+        user: updatedUsers[0],
+      });
+    } catch (error) {
+      await transaction.rollback();
+
+      return res.status(500).json({
+        message: "Błąd podczas odbierania roli użytkownikowi.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/users",
+  requireAuth,
+  requireRole("pracownik", "kierownik", "administrator", "superadmin"),
+  async (req, res) => {
+    try {
+      const users = await findUsersForDirectory();
+
+      return res.status(200).json({
+        users,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Błąd podczas pobierania listy użytkowników.",
+        error: error.message,
+      });
+    }
+  }
+);
 
 // Funkcja uruchamiająca backend
 async function startServer() {
