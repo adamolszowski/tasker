@@ -1,40 +1,593 @@
+// Import biblioteki Express - odpowiada za tworzenie backendu i endpointów API
 const express = require("express");
+
+// Import CORS - pozwala frontendowi łączyć się z backendem z innego portu
 const cors = require("cors");
+
+// Wczytanie zmiennych środowiskowych z pliku .env
 require("dotenv").config();
+
+// Import Sequelize - biblioteka do połączenia z PostgreSQL
 const { Sequelize } = require("sequelize");
 
-const app = express();
-const PORT = process.env.BACKEND_PORT || 5000;
+// Import bcryptjs - służy do hashowania haseł
+const bcrypt = require("bcryptjs");
 
+// Import JWT
+const jwt = require("jsonwebtoken");
+
+// Tworzymy aplikację Express
+const app = express();
+
+// Ustawiamy port backendu z .env, a jeśli go nie ma, to domyślnie 5000
+const PORT = process.env.BACKEND_PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
+
+// Włączenie obsługi CORS
 app.use(cors());
+
+// Włączenie obsługi JSON w requestach
 app.use(express.json());
 
+function normalizeOptionalField(value) {
+  // Jeśli wartość nie jest tekstem, zwracamy null
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  // Usuwamy spacje z początku i końca
+  const trimmed = value.trim();
+
+  // Jeśli po obcięciu spacji pole jest puste, zapisujemy null
+  return trimmed === "" ? null : trimmed;
+}
+
+async function findUserByLogin(login, transaction = null) {
+  // Szukamy użytkownika po loginie.
+  // transaction jest opcjonalne — jeśli zostanie przekazane,
+  // zapytanie wykona się w ramach tej transakcji.
+  const [rows] = await sequelize.query(
+    `
+    SELECT *
+    FROM users
+    WHERE login = :login
+    LIMIT 1
+    `,
+    {
+      // Bezpieczne podstawienie wartości login do zapytania SQL.
+      replacements: { login },
+
+      // Opcjonalna transakcja Sequelize.
+      transaction,
+    }
+  );
+
+  // Zwracamy pierwszego użytkownika albo null, jeśli nie istnieje.
+  return rows[0] || null;
+}
+
+async function findUserByEmail(email, transaction = null) {
+  // Jeśli e-maila nie podano, nie ma sensu sprawdzać
+  if (!email) {
+    return null;
+  }
+
+  const [rows] = await sequelize.query(
+    `
+    SELECT *
+    FROM users
+    WHERE email = :email
+    LIMIT 1
+    `,
+    {
+      replacements: { email: email, }, // przedluzony zapis
+      transaction,
+    }
+  );
+
+  return rows[0] || null;
+}
+
+async function findUserWithRoleByLogin(login) {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.login,
+      u.password_hash,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.role_id,
+      u.approved_at,
+      r.name AS role_name
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE u.login = :login
+    LIMIT 1
+    `,
+    {
+      replacements: { login },
+    }
+  );
+
+  return rows[0] || null;
+}
+
+async function findUserWithRoleById(userId) {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.login,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.role_id,
+      u.approved_at,
+      r.name AS role_name
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE u.id = :userId
+    LIMIT 1
+    `,
+    {
+      replacements: { userId },
+    }
+  );
+
+  return rows[0] || null;
+}
+
+async function findPendingUsers() {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      id,
+      login,
+      first_name,
+      last_name,
+      email,
+      phone,
+      role_id,
+      approved_by_user_id,
+      approved_at,
+      created_at
+    FROM users
+    WHERE role_id IS NULL
+    ORDER BY created_at ASC
+    `
+  );
+
+  return rows;
+}
+
+// Role, które można nadać nowemu użytkownikowi przy aktywacji
+const ALLOWED_APPROVAL_ROLES = ["pracownik", "kierownik", "administrator"];
+
+function validateApproveRoleInput(body) {
+  const role = typeof body.role === "string" ? body.role.trim() : "";
+
+  // Rola musi być podana
+  if (!role) {
+    return { error: "Rola jest wymagana." };
+  }
+
+  // Sprawdzamy, czy rola należy do dozwolonych
+  if (!ALLOWED_APPROVAL_ROLES.includes(role)) {
+    return {
+      error:
+        "Nieprawidłowa rola. Dozwolone: pracownik, kierownik, administrator.",
+    };
+  }
+
+  return {
+    data: { role },
+  };
+}
+
+// Role, które można ustawiać przy zmianie roli istniejącego usera
+const MANAGEABLE_ROLES = ["pracownik", "kierownik", "administrator"];
+
+async function findActiveUsers() {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.login,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.role_id,
+      u.approved_by_user_id,
+      u.approved_at,
+      u.created_at,
+      r.name AS role_name
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    ORDER BY u.created_at ASC
+    `
+  );
+
+  return rows;
+}
+
+async function findUsersForDirectory() {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      r.name AS role_name
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    ORDER BY u.last_name ASC NULLS LAST, u.first_name ASC NULLS LAST, u.id ASC
+    `
+  );
+
+  return rows;
+}
+
+async function findUserWithRoleByIdForAdmin(userId, transaction = null) {
+  const [rows] = await sequelize.query(
+    `
+    SELECT
+      u.id,
+      u.login,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.role_id,
+      u.approved_by_user_id,
+      u.approved_at,
+      u.created_at,
+      r.name AS role_name
+    FROM users u
+    LEFT JOIN roles r ON r.id = u.role_id
+    WHERE u.id = :userId
+    LIMIT 1
+    `,
+    {
+      replacements: { userId },
+      transaction,
+    }
+  );
+
+  return rows[0] || null;
+}
+
+function validateManageRoleInput(body) {
+  const role = typeof body.role === "string" ? body.role.trim() : "";
+
+  if (!role) {
+    return { error: "Rola jest wymagana." };
+  }
+
+  if (!MANAGEABLE_ROLES.includes(role)) {
+    return {
+      error:
+        "Nieprawidłowa rola. Dozwolone: pracownik, kierownik, administrator.",
+    };
+  }
+
+  return {
+    data: { role },
+  };
+}
+
+function canManageTargetUser(actorRole, targetRole) {
+  // Superadmin może zarządzać wszystkimi poza samym superadminem
+  if (actorRole === "superadmin") {
+    return targetRole !== "superadmin";
+  }
+
+  // Administrator nie może zarządzać administratorem ani superadminem
+  if (actorRole === "administrator") {
+    return targetRole !== "administrator" && targetRole !== "superadmin";
+  }
+
+  return false;
+}
+
+
+
+function validateRegisterInput(body) {
+  // login i hasło są wymagane,
+  // dlatego jeśli pole nie jest tekstem, ustawiamy pusty string.
+  // Dzięki temu później łatwo sprawdzić, czy user coś podał.
+  const login = typeof body.login === "string" ? body.login.trim() : "";
+  const password = typeof body.password === "string" ? body.password.trim() : "";
+
+  // pola opcjonalne normalizujemy funkcją pomocniczą:
+  // jeśli pole jest puste, zapisze się null,
+  // jeśli zawiera tekst, zostanie on przycięty
+  const firstName = normalizeOptionalField(body.firstName);
+  const lastName = normalizeOptionalField(body.lastName);
+  const email = normalizeOptionalField(body.email);
+  const phone = normalizeOptionalField(body.phone);
+
+  // Walidacja wymaganych pól
+  if (!login) {
+    return { error: "Login jest wymagany." };
+  }
+
+  if (!password) {
+    return { error: "Hasło jest wymagane." };
+  }
+
+  // Proste minimalne zasady
+  if (login.length < 3) {
+    return { error: "Login musi mieć co najmniej 3 znaki." };
+  }
+
+  if (password.length < 6) {
+    return { error: "Hasło musi mieć co najmniej 6 znaków." };
+  }
+
+  // Jeśli wszystko jest okej, zwracamy przygotowane dane
+  return {
+    data: {
+      login,
+      password,
+      firstName,
+      lastName,
+      email,
+      phone,
+    },
+  };
+}
+
+function validateLoginInput(body) {
+  // login i hasło są wymagane
+  const login = typeof body.login === "string" ? body.login.trim() : "";
+  const password = typeof body.password === "string" ? body.password.trim() : "";
+
+  if (!login) {
+    return { error: "Login jest wymagany." };
+  }
+
+  if (!password) {
+    return { error: "Hasło jest wymagane." };
+  }
+
+  return {
+    data: {
+      login,
+      password,
+    },
+  };
+}
+
+function generateAccessToken(user) {
+  if (!JWT_SECRET) {
+    throw new Error("Brakuje JWT_SECRET w pliku .env");
+  }
+
+  //genrujemy token
+  return jwt.sign(
+    {
+      sub: user.id, //id uzytkownika
+      login: user.login, //jaki ten user ma login
+      role: user.role_name, // jaka ten user ma role
+    },
+    JWT_SECRET,
+    {
+      expiresIn: JWT_EXPIRES_IN, // kiedy wygasa
+    }
+  );
+}
+
+//straznik, sprawdza czy request ma token i czy jest on poprawny
+//jak tak to idziemy dalej
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  //Jesli nie ma authorization
+  if (!authHeader) {
+    return res.status(401).json({
+      message: "Brak nagłówka Authorization",
+    });
+  }
+
+  // Nagłówek Authorization powinien mieć format:
+  // "Bearer TOKEN"
+  // split(" ") dzieli tekst na dwie części:
+  // [ "Bearer", "TOKEN" ]
+  const [scheme, token] = authHeader.split(" ");
+
+  if (scheme !== "Bearer" || !token) {
+    return res.status(401).json({
+      message: "Nieprawidłowy format tokenu.",
+    });
+  }
+
+  try {
+    // jwt.verify(...) sprawdza, czy token jest poprawny,
+    // czy został podpisany właściwym sekretem
+    // i czy nie wygasł.
+    // Jeśli wszystko jest okej, zwraca payload zapisany w tokenie.
+    const payload = jwt.verify(token, JWT_SECRET);
+    // Zapisujemy dane z tokenu do req.auth,
+    // żeby kolejne middleware i endpointy mogły z nich korzystać.
+    req.auth = payload;
+    // next() przekazuje obsługę requestu dalej,
+    // do następnego middleware albo właściwego endpointu.
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      message: "Token jest nieprawidłowy lub wygasł.",
+    });
+  }
+}
+
+function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    // Jeśli wcześniej middleware requireAuth nie ustawił req.auth,
+    // to znaczy, że nie mamy danych o zalogowanym userze
+    if (!req.auth || !req.auth.role) {
+      return res.status(403).json({
+        message: "Brak informacji o roli użytkownika.",
+      });
+    }
+
+    // Sprawdzamy, czy rola usera znajduje się na liście dozwolonych ról
+    if (!allowedRoles.includes(req.auth.role)) {
+      return res.status(403).json({
+        message: "Brak uprawnień do wykonania tej operacji.",
+      });
+    }
+
+    // Jeśli wszystko się zgadza, przekazujemy request dalej
+    next();
+  };
+}
+
+// Tworzymy połączenie z bazą danych PostgreSQL przez Sequelize
 const sequelize = new Sequelize(
-  process.env.POSTGRES_DB,
-  process.env.POSTGRES_USER,
-  process.env.POSTGRES_PASSWORD,
+  process.env.POSTGRES_DB,       // nazwa bazy danych
+  process.env.POSTGRES_USER,     // użytkownik bazy
+  process.env.POSTGRES_PASSWORD, // hasło do bazy
   {
-    host: process.env.DB_HOST || "postgres",
-    port: Number(process.env.DB_PORT || 5432),
-    dialect: "postgres",
-    logging: false,
+    host: process.env.DB_HOST || "postgres", // host bazy, zwykle nazwa kontenera
+    port: Number(process.env.DB_PORT || 5432), // port PostgreSQL
+    dialect: "postgres", // typ bazy danych
+    logging: false, // wyłącza logowanie zapytań SQL w konsoli
   }
 );
 
+// Funkcja sprawdza, czy w bazie istnieje już konto superadmina.
+// Jeśli nie istnieje - tworzy je automatycznie na podstawie danych z .env.
+// async oznacza, że funkcja działa asynchronicznie,
+// może używać await i zwraca Promise.
+// Dzięki temu JavaScript może poczekać na wynik operacji,
+// np. zapytania do bazy, bez blokowania dalszego działania aplikacji.
+async function ensureSuperadmin() {
+  // Rozpoczynamy transakcję - dzięki temu albo wszystko się zapisze,
+  // albo w razie błędu nic nie zostanie częściowo zapisane.
+  // await -> poczekaj, aż Sequelize utworzy transakcję, 
+  // i dopiero wtedy zapisz wynik do transaction, dzieki temu
+  // zamiast obietnicy mamy pewnosc ze poczekamy na wynik
+  const transaction = await sequelize.transaction();
+
+  try {
+    // Sprawdzamy, czy istnieje już użytkownik z rolą "superadmin"
+    // sequelize.query(...) zwraca tablicę, a jej pierwszy element
+    // to lista wierszy zwróconych przez zapytanie SQL
+    const [existingSuperadmin] = await sequelize.query(
+      `
+      SELECT u.id
+      FROM users u
+      JOIN roles r ON r.id = u.role_id
+      WHERE r.name = 'superadmin'
+      LIMIT 1
+      `,
+      { transaction: transaction } // to zapytanie ma byc wykonane w ramach transakcji
+      // czyli mamy bezpieczne zapytanie, skrocony zapis to bylby { transaction }
+    );
+
+    // Jeśli superadmin już istnieje, zatwierdzamy transakcję i kończymy funkcję
+    // jeśli zapytanie zwróciło co najmniej 1 wiersz,
+    // to znaczy, że superadmin już istnieje
+    if (existingSuperadmin.length > 0) {
+      await transaction.commit();
+      console.log("Superadmin już istnieje - pomijam tworzenie.");
+      return;
+    }
+
+    // Pobieramy dane superadmina z pliku .env
+    const superadminLogin = process.env.SUPERADMIN_LOGIN;
+    const superadminPassword = process.env.SUPERADMIN_PASSWORD;
+    const superadminFirstName = process.env.SUPERADMIN_FIRST_NAME || "Super";
+    const superadminLastName = process.env.SUPERADMIN_LAST_NAME || "Admin";
+    const superadminEmail = process.env.SUPERADMIN_EMAIL || null;
+    const superadminPhone = process.env.SUPERADMIN_PHONE || null;
+
+    // Jeśli brakuje loginu lub hasła w .env, rzucamy błąd
+    // dzieki temu ze to robimy, w funkcji start server jest on widoczny,
+    // po prostu przekazujemy go dalej - funkcja zwraca ten blad
+    if (!superadminLogin || !superadminPassword) {
+      throw new Error(
+        "Brakuje SUPERADMIN_LOGIN lub SUPERADMIN_PASSWORD w pliku .env"
+      );
+    }
+
+    // Hashujemy hasło superadmina
+    const passwordHash = await bcrypt.hash(superadminPassword, 10);
+
+    // Dodajemy superadmina do tabeli users
+    await sequelize.query(
+      `
+      INSERT INTO users (
+        login,
+        password_hash,
+        first_name,
+        last_name,
+        email,
+        phone,
+        role_id,
+        approved_at
+      )
+      VALUES (
+        :login,
+        :passwordHash,
+        :firstName,
+        :lastName,
+        :email,
+        :phone,
+        (SELECT id FROM roles WHERE name = 'superadmin'),
+        CURRENT_TIMESTAMP
+      )
+      `,
+      {
+        replacements: {
+          login: superadminLogin,
+          passwordHash,
+          firstName: superadminFirstName,
+          lastName: superadminLastName,
+          email: superadminEmail,
+          phone: superadminPhone,
+        },
+        transaction, // skrocony zapis
+      }
+    );
+
+    // Jeśli wszystko się udało - zatwierdzamy transakcję
+    await transaction.commit();
+    console.log("Superadmin został utworzony.");
+  } catch (error) {
+    // Jeśli był błąd - cofamy wszystkie zmiany w transakcji
+    await transaction.rollback();
+    throw error;
+  }
+}
+
+// Prosty endpoint testowy
 app.get("/", (req, res) => {
   res.send("Backend Tasker działa.");
 });
 
+// Endpoint sprawdzający stan backendu i połączenie z bazą
 app.get("/api/health", async (req, res) => {
   try {
+    // Sprawdzamy, czy połączenie z bazą działa
     await sequelize.authenticate();
 
+    // Jeśli działa - zwracamy status OK
     res.json({
       status: "ok",
       service: "tasker-backend",
       database: "connected",
     });
   } catch (error) {
+    // Jeśli nie działa - zwracamy błąd 500
     res.status(500).json({
       status: "error",
       service: "tasker-backend",
@@ -44,6 +597,7 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
+// Endpoint testowy do pobrania statusów projektów z tabeli słownikowej
 app.get("/api/project-statuses", async (req, res) => {
   try {
     const [rows] = await sequelize.query(`
@@ -52,8 +606,10 @@ app.get("/api/project-statuses", async (req, res) => {
       ORDER BY id ASC
     `);
 
+    // Zwracamy listę statusów
     res.json(rows);
   } catch (error) {
+    // Obsługa błędu przy pobieraniu statusów
     res.status(500).json({
       message: "Błąd podczas pobierania statusów projektu.",
       error: error.message,
@@ -61,6 +617,575 @@ app.get("/api/project-statuses", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend działa na porcie ${PORT}`);
+app.post("/api/auth/register", async (req, res) => {
+  // Najpierw walidujemy dane z requestu
+  const validation = validateRegisterInput(req.body);
+  
+  // Jeśli walidacja zwróciła błąd, kończymy od razu
+  if (validation.error) {
+    return res.status(400).json({
+      message: validation.error,
+    });
+  }
+
+  // Destrukturyzacja obiektu validation.data.
+  // Wyciągamy z niego poszczególne pola do osobnych zmiennych.
+  const { login, password, firstName, lastName, email, phone } = validation.data;
+  
+  const transaction = await sequelize.transaction();
+
+  try {
+    // Sprawdzamy, czy login już istnieje
+    const existingUser = await findUserByLogin(login, transaction);
+
+    if (existingUser) {
+      await transaction.rollback();
+      return res.status(409).json({
+        message: "Użytkownik o takim loginie już istnieje.",
+      });
+    }
+
+    // Sprawdzamy, czy e-mail już istnieje
+    const existingEmail = await findUserByEmail(email, transaction);
+
+    if (existingEmail) {
+      await transaction.rollback();
+      return res.status(409).json({
+        message: "Użytkownik o takim adresie e-mail już istnieje.",
+      });
+    }
+
+    // Hashujemy hasło przed zapisem do bazy
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // sequelize.query(...) zwraca tablicę.
+    // Pierwszy element tej tablicy to rekordy zwrócone przez RETURNING.
+    // Ponieważ dodajemy jednego użytkownika, insertedUsers będzie tablicą
+    // zawierającą jeden obiekt - nowo utworzone konto.
+    const [insertedUsers] = await sequelize.query(
+      `
+      INSERT INTO users (
+        login,
+        password_hash,
+        first_name,
+        last_name,
+        email,
+        phone,
+        role_id,
+        approved_by_user_id,
+        approved_at
+      )
+      VALUES (
+        :login,
+        :passwordHash,
+        :firstName,
+        :lastName,
+        :email,
+        :phone,
+        NULL,
+        NULL,
+        NULL
+      )
+      RETURNING id, login, first_name, last_name, email, phone, role_id, approved_at, created_at
+      `,
+      {
+        replacements: {
+          login,
+          passwordHash,
+          firstName,
+          lastName,
+          email,
+          phone,
+        },
+        transaction,
+      }
+    );
+
+    // Zatwierdzamy transakcję
+    await transaction.commit();
+
+    // Zwracamy sukces
+    return res.status(201).json({
+      message:
+        "Konto zostało utworzone i oczekuje na aktywację przez superadministratora.",
+      user: insertedUsers[0],
+    });
+  } catch (error) {
+    // Jeśli coś się wywali, cofamy transakcję
+    await transaction.rollback();
+
+    return res.status(500).json({
+      message: "Błąd podczas rejestracji użytkownika.",
+      error: error.message,
+    });
+  }
+  
 });
+
+app.post("/api/auth/login", async (req, res) => {
+  // Najpierw walidujemy dane logowania
+  const validation = validateLoginInput(req.body);
+
+  if (validation.error) {
+    return res.status(400).json({
+      message: validation.error,
+    });
+  }
+
+  // Wyciągamy login i hasło z obiektu validation.data
+  const { login, password } = validation.data;
+
+  try {
+    // Szukamy użytkownika po loginie razem z rolą
+    const user = await findUserWithRoleByLogin(login);
+
+    // Jeśli nie znalezniono usera, zwracamy błąd logowania
+    if (!user) {
+      return res.status(401).json({
+        message: "Nieprawidłowy login lub hasło.",
+      })
+    }
+
+    // Porównujemy hasło wpisane przez użytkownika z hashem z bazy
+    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+
+    // Jeśli hasło się nie zgadza, zwracamy błąd logowania
+    if (!passwordMatches) {
+      return res.status(401).json({
+        message: "Nieprawidłowy login lub hasło.",
+      });
+    }
+
+    // Jeśli konto nie ma jeszcze roli, to znaczy, że czeka na aktywację
+    if (!user.role_id || !user.role_name) {
+      return res.status(403).json({
+        message: "Konto oczekuje na aktywację przez superadministratora.",
+      });
+    }
+
+    // Generujemy token JWT dla poprawnie zalogowanego uzytkownika
+    const token = generateAccessToken(user);
+
+    // Jeśli wszystko jest poprawne to zwracamy dane uzytkownika + sukces + token
+    return res.status(200).json({
+      message: "Logowanie poprawne.",
+      token,
+      user: {
+        id: user.id,
+        login: user.login,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role_name,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Błąd podczas logowania użytkownika.",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  try {
+    // req.auth.sub pochodzi z tokenu JWT czyli pobieramy id uzytkownika
+    // z tokenu
+    const user = await findUserWithRoleById(req.auth.sub);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "Użytkownik nie istnieje.",
+      });
+    }
+    
+    // zwracamy dane dla tego uzytkownika bo beda potrzebne dla frontendu
+    return res.status(200).json({
+      user: {
+        id: user.id,
+        login: user.login,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role_name,
+        approvedAt: user.approved_at,
+      },
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Błąd podczas pobierania danych użytkownika.",
+      error: error.message,
+    });
+  }
+});
+
+app.get(
+  "/api/admin/pending-users",
+  requireAuth,
+  requireRole("superadmin"),
+  async (req, res) => {
+    try {
+      const users = await findPendingUsers();
+
+      return res.status(200).json({
+        users,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Błąd podczas pobierania użytkowników oczekujących.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/users/:id/approve-role",
+  requireAuth,
+  requireRole("superadmin"),
+  async (req, res) => {
+    // Najpierw sprawdzamy, czy body zawiera poprawną rolę
+    const validation = validateApproveRoleInput(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({
+        message: validation.error,
+      });
+    }
+
+    // ID usera pobieramy z parametru URL
+    const userId = Number(req.params.id);
+    const { role } = validation.data;
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({
+        message: "Nieprawidłowe ID użytkownika.",
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      // Szukamy usera po ID
+      const [targetUsers] = await sequelize.query(
+        `
+        SELECT id, login, role_id, approved_at
+        FROM users
+        WHERE id = :userId
+        LIMIT 1
+        `,
+        {
+          replacements: { userId },
+          transaction,
+        }
+      );
+
+      const targetUser = targetUsers[0];
+
+      // Jeśli user nie istnieje
+      if (!targetUser) {
+        await transaction.rollback();
+        return res.status(404).json({
+          message: "Użytkownik nie istnieje.",
+        });
+      }
+
+      // Jeśli user już ma rolę, to nie jest kontem oczekującym
+      if (targetUser.role_id !== null) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message: "Ten użytkownik ma już przypisaną rolę.",
+        });
+      }
+
+      // Nadajemy rolę i zapisujemy kto to zatwierdził
+      const [updatedUsers] = await sequelize.query(
+        `
+        UPDATE users
+        SET
+          role_id = (SELECT id FROM roles WHERE name = :role),
+          approved_by_user_id = :approvedByUserId,
+          approved_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = :userId
+        RETURNING id, login, role_id, approved_by_user_id, approved_at
+        `,
+        {
+          replacements: {
+            userId,
+            role,
+            approvedByUserId: req.auth.sub,
+          },
+          transaction,
+        }
+      );
+
+      await transaction.commit();
+
+      return res.status(200).json({
+        message: "Rola została nadana użytkownikowi.",
+        user: updatedUsers[0],
+      });
+    } catch (error) {
+      await transaction.rollback();
+
+      return res.status(500).json({
+        message: "Błąd podczas nadawania roli użytkownikowi.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/active-users",
+  requireAuth,
+  requireRole("administrator", "superadmin"),
+  async (req, res) => {
+    try {
+      const users = await findActiveUsers();
+
+      return res.status(200).json({
+        users,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Błąd podczas pobierania aktywnych użytkowników.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/users/:id/change-role",
+  requireAuth,
+  requireRole("administrator", "superadmin"),
+  async (req, res) => {
+    const validation = validateManageRoleInput(req.body);
+
+    if (validation.error) {
+      return res.status(400).json({
+        message: validation.error,
+      });
+    }
+
+    const userId = Number(req.params.id);
+    const { role } = validation.data;
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({
+        message: "Nieprawidłowe ID użytkownika.",
+      });
+    }
+
+    // Nie pozwalamy zmieniać własnej roli tym endpointem
+    if (req.auth.sub === userId) {
+      return res.status(409).json({
+        message: "Nie można zmieniać własnej roli tym endpointem.",
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      const targetUser = await findUserWithRoleByIdForAdmin(userId, transaction);
+
+      if (!targetUser) {
+        await transaction.rollback();
+        return res.status(404).json({
+          message: "Użytkownik nie istnieje.",
+        });
+      }
+
+      // Jeśli user nie ma jeszcze roli, to trzeba użyć approve-role
+      if (!targetUser.role_id || !targetUser.role_name) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message:
+            "Ten użytkownik nie ma jeszcze przypisanej roli. Użyj aktywacji konta.",
+        });
+      }
+
+      // Sprawdzamy, czy zalogowany user może zarządzać takim targetem
+      if (!canManageTargetUser(req.auth.role, targetUser.role_name)) {
+        await transaction.rollback();
+        return res.status(403).json({
+          message: "Brak uprawnień do zmiany roli tego użytkownika.",
+        });
+      }
+
+      // Jeśli rola jest taka sama jak obecna, nie ma sensu robić update
+      if (targetUser.role_name === role) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message: "Użytkownik ma już przypisaną tę rolę.",
+        });
+      }
+
+      const [updatedUsers] = await sequelize.query(
+        `
+        UPDATE users
+        SET
+          role_id = (SELECT id FROM roles WHERE name = :role),
+          approved_by_user_id = :approvedByUserId,
+          approved_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = :userId
+        RETURNING id, login, role_id, approved_by_user_id, approved_at
+        `,
+        {
+          replacements: {
+            userId,
+            role,
+            approvedByUserId: req.auth.sub,
+          },
+          transaction,
+        }
+      );
+
+      await transaction.commit();
+
+      return res.status(200).json({
+        message: "Rola użytkownika została zmieniona.",
+        user: updatedUsers[0],
+      });
+    } catch (error) {
+      await transaction.rollback();
+
+      return res.status(500).json({
+        message: "Błąd podczas zmiany roli użytkownika.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/admin/users/:id/revoke-role",
+  requireAuth,
+  requireRole("administrator", "superadmin"),
+  async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(400).json({
+        message: "Nieprawidłowe ID użytkownika.",
+      });
+    }
+
+    // Nie pozwalamy odebrać własnej roli tym endpointem
+    if (req.auth.sub === userId) {
+      return res.status(409).json({
+        message: "Nie można odebrać własnej roli tym endpointem.",
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      const targetUser = await findUserWithRoleByIdForAdmin(userId, transaction);
+
+      if (!targetUser) {
+        await transaction.rollback();
+        return res.status(404).json({
+          message: "Użytkownik nie istnieje.",
+        });
+      }
+
+      // Jeśli user już nie ma roli, to nie ma czego odbierać
+      if (!targetUser.role_id || !targetUser.role_name) {
+        await transaction.rollback();
+        return res.status(409).json({
+          message: "Ten użytkownik nie ma przypisanej roli.",
+        });
+      }
+
+      // Sprawdzamy uprawnienia
+      if (!canManageTargetUser(req.auth.role, targetUser.role_name)) {
+        await transaction.rollback();
+        return res.status(403).json({
+          message: "Brak uprawnień do odebrania roli temu użytkownikowi.",
+        });
+      }
+
+      const [updatedUsers] = await sequelize.query(
+        `
+        UPDATE users
+        SET
+          role_id = NULL,
+          approved_by_user_id = NULL,
+          approved_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = :userId
+        RETURNING id, login, role_id, approved_by_user_id, approved_at
+        `,
+        {
+          replacements: { userId },
+          transaction,
+        }
+      );
+
+      await transaction.commit();
+
+      return res.status(200).json({
+        message: "Rola została odebrana użytkownikowi.",
+        user: updatedUsers[0],
+      });
+    } catch (error) {
+      await transaction.rollback();
+
+      return res.status(500).json({
+        message: "Błąd podczas odbierania roli użytkownikowi.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/users",
+  requireAuth,
+  requireRole("pracownik", "kierownik", "administrator", "superadmin"),
+  async (req, res) => {
+    try {
+      const users = await findUsersForDirectory();
+
+      return res.status(200).json({
+        users,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Błąd podczas pobierania listy użytkowników.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Funkcja uruchamiająca backend
+async function startServer() {
+  try {
+    // Sprawdzamy połączenie z bazą
+    await sequelize.authenticate();
+    console.log("Połączenie z bazą danych działa.");
+
+    // Upewniamy się, że superadmin istnieje
+    await ensureSuperadmin();
+
+    // Uruchamiamy serwer Express na wskazanym porcie
+    app.listen(PORT, () => {
+      console.log(`Backend działa na porcie ${PORT}`);
+    });
+  } catch (error) {
+    // Jeśli backend nie wystartuje - wypisujemy błąd i kończymy proces
+    console.error("Błąd podczas uruchamiania backendu:", error.message);
+    process.exit(1);
+  }
+}
+
+// Start backendu
+startServer();

@@ -311,19 +311,3 @@ INSERT INTO task_priorities (name) VALUES
 ('niski'),
 ('sredni'),
 ('wysoki');
-
-INSERT INTO users (
-    login,
-    password_hash,
-    first_name,
-    last_name,
-    role_id,
-    approved_at
-) VALUES (
-    'superadmin',
-    '<HASH_HASLA>',
-    'Super',
-    'Admin',
-    (SELECT id FROM roles WHERE name = 'superadmin'),
-    CURRENT_TIMESTAMP
-);

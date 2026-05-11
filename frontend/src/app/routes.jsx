@@ -38,7 +38,7 @@ export const APP_ROUTES = [
     ],
 },
  {
-    id: "task",
+    id: "tasks",
     label: "Zadania",
     roles: [
       ROLES.PRACOWNIK,
