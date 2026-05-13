@@ -9,6 +9,8 @@ import RegisterPage from "../pages/RegisterPage";
 import AppHeader from "../components/layout/AppHeader";
 import AppSidebar from "../components/layout/AppSidebar";
 import { APP_ROUTES, ROLES } from "./routes";
+import AdminRolesPage from "../pages/AdminRolesPage";
+import UsersPage from "../pages/UserPage";
 
 // Adres backendu - używamy go przy /api/auth/me
 const API_URL = "http://localhost:5000";
@@ -278,7 +280,25 @@ function App() {
         return renderPlaceholder("ZADANIA");
 
       case "users":
-        return renderPlaceholder("UŻYTKOWNICY");
+        return( 
+        <div className="min-vh-100 bg-light">
+             <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+
+             <div className="d-flex">
+                  <AppSidebar
+                    currentRoute={currentRoute}
+                    onNavigate={setCurrentRoute}
+                    />
+                        
+                        <div className="flex-grow 1-p4">
+                              <UsersPage
+                                authToken={authToken}
+                                authenticatedUser={authenticatedUser}
+                              />
+                        </div>
+             </div>
+        </div>
+        );
 
       case "chat":
         return renderPlaceholder("CZAT");
@@ -287,7 +307,26 @@ function App() {
         return renderPlaceholder("POWIADOMIENIA");
 
       case "admin-roles":
-        return renderPlaceholder("ZARZĄDZANIE ROLAMI");
+        return (
+              <div className="min-vh-100 bg-light">
+                 <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+                   
+                   <div className="d-flex">
+                      <AppSidebar
+                        currentRoute={currentRoute}
+                        onNavigate={setCurrentRoute}
+                        />
+
+                    <div className="flex-grow-1 p-4">
+                       <AdminRolesPage
+                         authToken={authToken}
+                         authenticatedUser={authenticatedUser}
+                         />
+                    </div>
+                   </div>
+              </div>
+
+        );
 
       default:
         return <h2>Brak widoku</h2>;
