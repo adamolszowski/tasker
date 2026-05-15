@@ -1,73 +1,98 @@
 import React from "react";
+import Nav from "react-bootstrap/Nav";
 import Button from "react-bootstrap/Button";
-import Badge from "react-bootstrap/Badge";
 
-function SidebarButton({ label, isActive, onClick, badge}) {
-    return (
-        <Button
-        variant={isActive ? "dark" : "outline-secondary"}
-        className="w-100 d-flex justify-content-between align-items-center text-start"
-        onClick={onClick}
-        >
-            <span>{label}</span>
-            {badge !== undefined && (
-                <Badge bg="light" text="dark">
-                    {badge}
-                </Badge>
-            )}
-            </Button>
-    );
+// Pomocniczy przycisk do bocznego menu.
+// Dzieki temu nie powtarzamy ciagle tego samego kodu
+// dla kazdego elementu nawigacji.
+function SidebarButton({ label, isActive, onClick }) {
+  return (
+    <Button
+      variant={isActive ? "dark" : "outline-dark"}
+      className="w-100 text-start"
+      onClick={onClick}
+    >
+      {label}
+    </Button>
+  );
 }
-    
+
+// Lewy panel nawigacji aplikacji.
+// Stad user moze przechodzic miedzy glownymi widokami systemu.
 function AppSidebar({ currentRoute, onNavigate }) {
-    return (
-     <div
-      className="border-end bg-white d-flex flex-column justify-content-between p-3"
-     style={{ width: "200px", minHeight: "calc(100vh - 89px)" }}
-     >
-        <div className="d-flex flex-column gap-2">
-            <SidebarButton
+  return (
+    <div
+      className="border-end bg-white p-3 d-flex flex-column justify-content-between"
+      style={{ width: "250px", minHeight: "calc(100vh - 73px)" }}
+    >
+      {/* Gorna czesc sidebara - glowna nawigacja */}
+      <div>
+        <div className="fw-bold text-uppercase text-muted small mb-3">
+          Nawigacja
+        </div>
+
+        <Nav className="flex-column gap-2">
+          {/* Przeglad / dashboard */}
+          <SidebarButton
             label="Przegląd"
             isActive={currentRoute === "dashboard"}
             onClick={() => onNavigate("dashboard")}
-      />
+          />
 
-            <SidebarButton
+          {/* Projekty */}
+          <SidebarButton
             label="Projekty"
             isActive={currentRoute === "projects"}
             onClick={() => onNavigate("projects")}
-      />
+          />
 
-       <SidebarButton
+          {/* Zadania */}
+          <SidebarButton
             label="Zadania"
             isActive={currentRoute === "tasks"}
             onClick={() => onNavigate("tasks")}
-      />
+          />
 
-       <SidebarButton
+          {/* Lista userow */}
+          <SidebarButton
             label="Użytkownicy"
             isActive={currentRoute === "users"}
             onClick={() => onNavigate("users")}
-      />
+          />
+
+          {/* Widok do zarzadzania rolami */}
+          <SidebarButton
+            label="Zarządzanie rolami"
+            isActive={currentRoute === "admin-roles"}
+            onClick={() => onNavigate("admin-roles")}
+          />
+        </Nav>
       </div>
 
-      <div className="d-flex flex-column gap-2 pt-4 border-top">
-         <SidebarButton
+      {/* Dolna czesc sidebara - dodatkowe moduły */}
+      <div>
+        <div className="fw-bold text-uppercase text-muted small mb-3">
+          Komunikacja
+        </div>
+
+        <Nav className="flex-column gap-2">
+          {/* Czat */}
+          <SidebarButton
             label="Czat"
-            badge={3}
             isActive={currentRoute === "chat"}
             onClick={() => onNavigate("chat")}
-      />
-    
-     <SidebarButton
+          />
+
+          {/* Powiadomienia */}
+          <SidebarButton
             label="Powiadomienia"
-            badge={2}
             isActive={currentRoute === "notifications"}
             onClick={() => onNavigate("notifications")}
-      />
- </div>
-</div>
-    );
+          />
+        </Nav>
+      </div>
+    </div>
+  );
 }
 
 export default AppSidebar;

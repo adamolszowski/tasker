@@ -30,6 +30,10 @@ app.use(cors());
 // Włączenie obsługi JSON w requestach
 app.use(express.json());
 
+// Prosta funkcja pomocnicza do pol opcjonalnych.
+// Jak user nic nie poda albo poda cos co nie jest tekstem,
+// to zwracamy null.
+// Jak poda tekst, to obcinamy spacje z poczatku i konca.
 function normalizeOptionalField(value) {
   // Jeśli wartość nie jest tekstem, zwracamy null
   if (typeof value !== "string") {
@@ -43,6 +47,9 @@ function normalizeOptionalField(value) {
   return trimmed === "" ? null : trimmed;
 }
 
+// Szuka jednego usera po loginie.
+// Przydaje sie np. przy rejestracji, zeby sprawdzic
+// czy taki login juz jest zajety.
 async function findUserByLogin(login, transaction = null) {
   // Szukamy użytkownika po loginie.
   // transaction jest opcjonalne — jeśli zostanie przekazane,
@@ -67,6 +74,9 @@ async function findUserByLogin(login, transaction = null) {
   return rows[0] || null;
 }
 
+// Szuka usera po adresie e-mail.
+// To tez jest potrzebne przy rejestracji,
+// bo nie chcemy duplikatow maili w bazie.
 async function findUserByEmail(email, transaction = null) {
   // Jeśli e-maila nie podano, nie ma sensu sprawdzać
   if (!email) {
@@ -81,7 +91,7 @@ async function findUserByEmail(email, transaction = null) {
     LIMIT 1
     `,
     {
-      replacements: { email: email, }, // przedluzony zapis
+      replacements: { email: email }, // przedluzony zapis
       transaction,
     }
   );
@@ -89,6 +99,11 @@ async function findUserByEmail(email, transaction = null) {
   return rows[0] || null;
 }
 
+// Pobiera usera po loginie razem z jego rola.
+// Uzywamy tego przy logowaniu, bo potrzebujemy:
+// - hasha hasla
+// - roli
+// - podstawowych danych usera
 async function findUserWithRoleByLogin(login) {
   const [rows] = await sequelize.query(
     `
@@ -116,6 +131,9 @@ async function findUserWithRoleByLogin(login) {
   return rows[0] || null;
 }
 
+// Pobiera usera po jego ID razem z rola.
+// To sie przydaje np. po zalogowaniu przy /api/auth/me,
+// kiedy z tokenu mamy id usera i chcemy pobrac jego dane z bazy.
 async function findUserWithRoleById(userId) {
   const [rows] = await sequelize.query(
     `
@@ -142,6 +160,8 @@ async function findUserWithRoleById(userId) {
   return rows[0] || null;
 }
 
+// Pobiera liste userow, ktorzy nie maja jeszcze roli.
+// Czyli sa po rejestracji, ale jeszcze nikt ich nie aktywowal.
 async function findPendingUsers() {
   const [rows] = await sequelize.query(
     `
@@ -168,6 +188,9 @@ async function findPendingUsers() {
 // Role, które można nadać nowemu użytkownikowi przy aktywacji
 const ALLOWED_APPROVAL_ROLES = ["pracownik", "kierownik", "administrator"];
 
+// Sprawdza czy przy aktywacji nowego konta
+// backend dostal poprawna role.
+// Nie mozna tu wpisac byle czego - tylko role dozwolone w systemie.
 function validateApproveRoleInput(body) {
   const role = typeof body.role === "string" ? body.role.trim() : "";
 
@@ -192,6 +215,8 @@ function validateApproveRoleInput(body) {
 // Role, które można ustawiać przy zmianie roli istniejącego usera
 const MANAGEABLE_ROLES = ["pracownik", "kierownik", "administrator"];
 
+// Pobiera liste aktywnych userow, czyli takich,
+// ktorzy maja juz przypisana role w systemie.
 async function findActiveUsers() {
   const [rows] = await sequelize.query(
     `
@@ -216,6 +241,9 @@ async function findActiveUsers() {
   return rows;
 }
 
+// Zwykla lista userow do widoku "Uzytkownicy".
+// Tutaj specjalnie nie zwracamy loginu,
+// tylko podstawowe dane do wyswietlenia na froncie.
 async function findUsersForDirectory() {
   const [rows] = await sequelize.query(
     `
@@ -235,6 +263,9 @@ async function findUsersForDirectory() {
   return rows;
 }
 
+// Pobiera konkretnego usera po ID razem z rola.
+// Przydaje sie przy zmianie roli albo odbieraniu roli,
+// bo trzeba sprawdzic kim jest target przed wykonaniem akcji.
 async function findUserWithRoleByIdForAdmin(userId, transaction = null) {
   const [rows] = await sequelize.query(
     `
@@ -264,41 +295,11 @@ async function findUserWithRoleByIdForAdmin(userId, transaction = null) {
   return rows[0] || null;
 }
 
-function validateManageRoleInput(body) {
-  const role = typeof body.role === "string" ? body.role.trim() : "";
-
-  if (!role) {
-    return { error: "Rola jest wymagana." };
-  }
-
-  if (!MANAGEABLE_ROLES.includes(role)) {
-    return {
-      error:
-        "Nieprawidłowa rola. Dozwolone: pracownik, kierownik, administrator.",
-    };
-  }
-
-  return {
-    data: { role },
-  };
-}
-
-function canManageTargetUser(actorRole, targetRole) {
-  // Superadmin może zarządzać wszystkimi poza samym superadminem
-  if (actorRole === "superadmin") {
-    return targetRole !== "superadmin";
-  }
-
-  // Administrator nie może zarządzać administratorem ani superadminem
-  if (actorRole === "administrator") {
-    return targetRole !== "administrator" && targetRole !== "superadmin";
-  }
-
-  return false;
-}
-
-
-
+// Walidacja danych z formularza rejestracji.
+// Sprawdzamy tutaj najprostsze rzeczy:
+// - czy login jest podany
+// - czy haslo jest podane
+// - czy login i haslo maja minimalna dlugosc
 function validateRegisterInput(body) {
   // login i hasło są wymagane,
   // dlatego jeśli pole nie jest tekstem, ustawiamy pusty string.
@@ -345,6 +346,9 @@ function validateRegisterInput(body) {
   };
 }
 
+// Walidacja danych logowania.
+// Tu sprawdzamy tylko podstawy:
+// login i haslo musza byc wpisane.
 function validateLoginInput(body) {
   // login i hasło są wymagane
   const login = typeof body.login === "string" ? body.login.trim() : "";
@@ -366,16 +370,58 @@ function validateLoginInput(body) {
   };
 }
 
+// Walidacja nowej roli przy zmianie roli istniejacego usera.
+// Backend sprawdza, czy podana rola jest poprawna
+// i czy nalezy do dozwolonych opcji.
+function validateManageRoleInput(body) {
+  const role = typeof body.role === "string" ? body.role.trim() : "";
+
+  if (!role) {
+    return { error: "Rola jest wymagana." };
+  }
+
+  if (!MANAGEABLE_ROLES.includes(role)) {
+    return {
+      error:
+        "Nieprawidłowa rola. Dozwolone: pracownik, kierownik, administrator.",
+    };
+  }
+
+  return {
+    data: { role },
+  };
+}
+
+// Tu jest glowna zasada biznesowa dla zarzadzania rolami.
+// Sprawdzamy, czy zalogowany user moze zarzadzac drugim userem.
+// Superadmin moze wiecej, administrator ma ograniczenia.
+function canManageTargetUser(actorRole, targetRole) {
+  // Superadmin może zarządzać wszystkimi poza samym superadminem
+  if (actorRole === "superadmin") {
+    return targetRole !== "superadmin";
+  }
+
+  // Administrator nie może zarządzać administratorem ani superadminem
+  if (actorRole === "administrator") {
+    return targetRole !== "administrator" && targetRole !== "superadmin";
+  }
+
+  return false;
+}
+
+// Generuje token JWT dla poprawnie zalogowanego usera.
+// W tym tokenie zapisujemy podstawowe dane,
+// ktore potem beda potrzebne do autoryzacji.
 function generateAccessToken(user) {
   if (!JWT_SECRET) {
     throw new Error("Brakuje JWT_SECRET w pliku .env");
   }
 
-  //genrujemy token
+  // genrujemy token
   return jwt.sign(
     {
-      sub: user.id, //id uzytkownika
-      login: user.login, //jaki ten user ma login
+      sub: user.id, // id uzytkownika
+      login: user.login, // jaki ten user ma login
       role: user.role_name, // jaka ten user ma role
     },
     JWT_SECRET,
@@ -385,15 +431,15 @@ function generateAccessToken(user) {
   );
 }
 
-//straznik, sprawdza czy request ma token i czy jest on poprawny
-//jak tak to idziemy dalej
+// straznik, sprawdza czy request ma token i czy jest on poprawny
+// jak tak to idziemy dalej
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  //Jesli nie ma authorization
+  // Jesli nie ma authorization
   if (!authHeader) {
     return res.status(401).json({
-      message: "Brak nagłówka Authorization",
+      message: "Brak nagłówka Authorization.",
     });
   }
 
@@ -428,6 +474,9 @@ function requireAuth(req, res, next) {
   }
 }
 
+// Dodatkowy middleware do sprawdzania roli.
+// requireAuth sprawdza czy user ma poprawny token,
+// a requireRole sprawdza czy ma odpowiednie uprawnienia.
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
     // Jeśli wcześniej middleware requireAuth nie ustawił req.auth,
@@ -452,8 +501,8 @@ function requireRole(...allowedRoles) {
 
 // Tworzymy połączenie z bazą danych PostgreSQL przez Sequelize
 const sequelize = new Sequelize(
-  process.env.POSTGRES_DB,       // nazwa bazy danych
-  process.env.POSTGRES_USER,     // użytkownik bazy
+  process.env.POSTGRES_DB, // nazwa bazy danych
+  process.env.POSTGRES_USER, // użytkownik bazy
   process.env.POSTGRES_PASSWORD, // hasło do bazy
   {
     host: process.env.DB_HOST || "postgres", // host bazy, zwykle nazwa kontenera
@@ -472,7 +521,7 @@ const sequelize = new Sequelize(
 async function ensureSuperadmin() {
   // Rozpoczynamy transakcję - dzięki temu albo wszystko się zapisze,
   // albo w razie błędu nic nie zostanie częściowo zapisane.
-  // await -> poczekaj, aż Sequelize utworzy transakcję, 
+  // await -> poczekaj, aż Sequelize utworzy transakcję,
   // i dopiero wtedy zapisz wynik do transaction, dzieki temu
   // zamiast obietnicy mamy pewnosc ze poczekamy na wynik
   const transaction = await sequelize.transaction();
@@ -617,10 +666,13 @@ app.get("/api/project-statuses", async (req, res) => {
   }
 });
 
+// Endpoint rejestracji nowego usera.
+// Tworzy konto bez roli, czyli takie ktore
+// po rejestracji czeka jeszcze na aktywacje przez superadmina.
 app.post("/api/auth/register", async (req, res) => {
   // Najpierw walidujemy dane z requestu
   const validation = validateRegisterInput(req.body);
-  
+
   // Jeśli walidacja zwróciła błąd, kończymy od razu
   if (validation.error) {
     return res.status(400).json({
@@ -630,8 +682,11 @@ app.post("/api/auth/register", async (req, res) => {
 
   // Destrukturyzacja obiektu validation.data.
   // Wyciągamy z niego poszczególne pola do osobnych zmiennych.
-  const { login, password, firstName, lastName, email, phone } = validation.data;
-  
+  const { login, password, firstName, lastName, email, phone } =
+    validation.data;
+
+  // Otwieramy transakcje, zeby cala operacja byla bezpieczna.
+  // Albo wszystko zapisze sie poprawnie, albo nic.
   const transaction = await sequelize.transaction();
 
   try {
@@ -701,7 +756,7 @@ app.post("/api/auth/register", async (req, res) => {
       }
     );
 
-    // Zatwierdzamy transakcję
+    // Zatwierdzamy zmiany w bazie.
     await transaction.commit();
 
     // Zwracamy sukces
@@ -711,7 +766,7 @@ app.post("/api/auth/register", async (req, res) => {
       user: insertedUsers[0],
     });
   } catch (error) {
-    // Jeśli coś się wywali, cofamy transakcję
+    // Cofamy zmiany, jesli cos poszlo nie tak.
     await transaction.rollback();
 
     return res.status(500).json({
@@ -719,9 +774,11 @@ app.post("/api/auth/register", async (req, res) => {
       error: error.message,
     });
   }
-  
 });
 
+// Endpoint logowania.
+// Sprawdza login i haslo, a jak wszystko jest okej,
+// to zwraca token JWT i dane usera.
 app.post("/api/auth/login", async (req, res) => {
   // Najpierw walidujemy dane logowania
   const validation = validateLoginInput(req.body);
@@ -743,7 +800,7 @@ app.post("/api/auth/login", async (req, res) => {
     if (!user) {
       return res.status(401).json({
         message: "Nieprawidłowy login lub hasło.",
-      })
+      });
     }
 
     // Porównujemy hasło wpisane przez użytkownika z hashem z bazy
@@ -788,6 +845,8 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+// Endpoint do sprawdzania kto jest aktualnie zalogowany.
+// Front wysyla token, a backend zwraca dane usera na podstawie tego tokenu.
 app.get("/api/auth/me", requireAuth, async (req, res) => {
   try {
     // req.auth.sub pochodzi z tokenu JWT czyli pobieramy id uzytkownika
@@ -799,7 +858,7 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
         message: "Użytkownik nie istnieje.",
       });
     }
-    
+
     // zwracamy dane dla tego uzytkownika bo beda potrzebne dla frontendu
     return res.status(200).json({
       user: {
@@ -813,7 +872,6 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
         approvedAt: user.approved_at,
       },
     });
-
   } catch (error) {
     return res.status(500).json({
       message: "Błąd podczas pobierania danych użytkownika.",
@@ -822,6 +880,8 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
   }
 });
 
+// Lista userow oczekujacych na aktywacje.
+// Dostep tylko dla superadmina.
 app.get(
   "/api/admin/pending-users",
   requireAuth,
@@ -842,6 +902,9 @@ app.get(
   }
 );
 
+// Nadaje role userowi, ktory byl zarejestrowany,
+// ale jeszcze nie zostal aktywowany.
+// Tylko superadmin moze to zrobic.
 app.patch(
   "/api/admin/users/:id/approve-role",
   requireAuth,
@@ -866,6 +929,8 @@ app.patch(
       });
     }
 
+    // Otwieramy transakcje, zeby cala operacja byla bezpieczna.
+    // Albo wszystko zapisze sie poprawnie, albo nic.
     const transaction = await sequelize.transaction();
 
     try {
@@ -923,6 +988,7 @@ app.patch(
         }
       );
 
+      // Zatwierdzamy zmiany w bazie.
       await transaction.commit();
 
       return res.status(200).json({
@@ -930,6 +996,7 @@ app.patch(
         user: updatedUsers[0],
       });
     } catch (error) {
+      // Cofamy zmiany, jesli cos poszlo nie tak.
       await transaction.rollback();
 
       return res.status(500).json({
@@ -940,6 +1007,8 @@ app.patch(
   }
 );
 
+// Lista aktywnych userow, czyli takich co maja juz role.
+// Przydaje sie do panelu zarzadzania rolami.
 app.get(
   "/api/admin/active-users",
   requireAuth,
@@ -960,6 +1029,9 @@ app.get(
   }
 );
 
+// Zmienia role juz aktywnemu userowi.
+// Tu backend dodatkowo sprawdza,
+// czy zalogowany user ma prawo wykonac taka zmiane.
 app.patch(
   "/api/admin/users/:id/change-role",
   requireAuth,
@@ -989,10 +1061,15 @@ app.patch(
       });
     }
 
+    // Otwieramy transakcje, zeby cala operacja byla bezpieczna.
+    // Albo wszystko zapisze sie poprawnie, albo nic.
     const transaction = await sequelize.transaction();
 
     try {
-      const targetUser = await findUserWithRoleByIdForAdmin(userId, transaction);
+      const targetUser = await findUserWithRoleByIdForAdmin(
+        userId,
+        transaction
+      );
 
       if (!targetUser) {
         await transaction.rollback();
@@ -1047,6 +1124,7 @@ app.patch(
         }
       );
 
+      // Zatwierdzamy zmiany w bazie.
       await transaction.commit();
 
       return res.status(200).json({
@@ -1054,6 +1132,7 @@ app.patch(
         user: updatedUsers[0],
       });
     } catch (error) {
+      // Cofamy zmiany, jesli cos poszlo nie tak.
       await transaction.rollback();
 
       return res.status(500).json({
@@ -1064,6 +1143,9 @@ app.patch(
   }
 );
 
+// Odbiera role userowi.
+// Po tej operacji konto wraca do stanu bez roli,
+// czyli znowu jest jakby "nieaktywne".
 app.patch(
   "/api/admin/users/:id/revoke-role",
   requireAuth,
@@ -1084,10 +1166,15 @@ app.patch(
       });
     }
 
+    // Otwieramy transakcje, zeby cala operacja byla bezpieczna.
+    // Albo wszystko zapisze sie poprawnie, albo nic.
     const transaction = await sequelize.transaction();
 
     try {
-      const targetUser = await findUserWithRoleByIdForAdmin(userId, transaction);
+      const targetUser = await findUserWithRoleByIdForAdmin(
+        userId,
+        transaction
+      );
 
       if (!targetUser) {
         await transaction.rollback();
@@ -1129,6 +1216,7 @@ app.patch(
         }
       );
 
+      // Zatwierdzamy zmiany w bazie.
       await transaction.commit();
 
       return res.status(200).json({
@@ -1136,6 +1224,7 @@ app.patch(
         user: updatedUsers[0],
       });
     } catch (error) {
+      // Cofamy zmiany, jesli cos poszlo nie tak.
       await transaction.rollback();
 
       return res.status(500).json({
@@ -1146,6 +1235,9 @@ app.patch(
   }
 );
 
+// Zwykla lista userow do widoku na froncie.
+// Pokazujemy tylko podstawowe dane,
+// bez publicznego pokazywania loginu.
 app.get(
   "/api/users",
   requireAuth,
@@ -1166,7 +1258,9 @@ app.get(
   }
 );
 
-// Funkcja uruchamiająca backend
+// Funkcja startowa backendu.
+// Sprawdza polaczenie z baza, pilnuje superadmina
+// i dopiero potem odpala serwer Express.
 async function startServer() {
   try {
     // Sprawdzamy połączenie z bazą
