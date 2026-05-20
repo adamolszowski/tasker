@@ -19,7 +19,11 @@ function SidebarButton({ label, isActive, onClick }) {
 
 // Lewy panel nawigacji aplikacji.
 // Stad user moze przechodzic miedzy glownymi widokami systemu.
-function AppSidebar({ currentRoute, onNavigate }) {
+function AppSidebar({ currentRoute, onNavigate, authenticatedUser }) {
+  const userRole = authenticatedUser?.role;
+
+  const canSeeAdminRoles = userRole === "administrator" || userRole === "superadmin";
+
   return (
     <div
       className="border-end bg-white p-3 d-flex flex-column justify-content-between"
@@ -61,11 +65,13 @@ function AppSidebar({ currentRoute, onNavigate }) {
           />
 
           {/* Widok do zarzadzania rolami */}
+          {canSeeAdminRoles && (
           <SidebarButton
             label="Zarządzanie rolami"
             isActive={currentRoute === "admin-roles"}
             onClick={() => onNavigate("admin-roles")}
           />
+          )}
         </Nav>
       </div>
 

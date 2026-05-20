@@ -31,6 +31,7 @@ CREATE TABLE users (
     approved_at         TIMESTAMP NULL,
     created_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT fk_users_role
         FOREIGN KEY (role_id)
@@ -311,3 +312,26 @@ INSERT INTO task_priorities (name) VALUES
 ('niski'),
 ('sredni'),
 ('wysoki');
+
+INSERT INTO users (
+  login,
+  password_hash,
+  first_name,
+  last_name,
+  email,
+  phone,
+  role_id,
+  approved_at,
+  must_change_password
+)
+VALUES (
+  'superadmin',
+  '$2a$10$6tWruSJd.Kob7BPpYjF71eFmN87E6c5zEoCBKfxUD2YPUpilnp6ee',
+  'Super',
+  'Admin',
+  NULL,
+  NULL,
+  (SELECT id FROM roles WHERE name = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  TRUE
+);
