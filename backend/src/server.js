@@ -46,6 +46,9 @@ const {
   findUserSecurityById,
 } = require("./data/userQueries");
 
+// Trasy projektu sa wydzielone do osobnego pliku, zeby potem latwiej bylo to rozwijac
+const projectRoutes = require("./routes/projectRoutes");
+
 // Tworzymy aplikację Express
 const app = express();
 
