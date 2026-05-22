@@ -7,6 +7,7 @@ import AppSidebar from "../components/layout/AppSidebar";
 import AdminRolesPage from "../pages/AdminRolesPage";
 import UsersPage from "../pages/UserPage";
 import ChangePasswordPage from "../pages/ChangePasswordPage";
+import ProjectsPage from "../pages/ProjectsPage";
 import TasksPage from "../pages/TasksPage";
 
 // Adres backendu - uzywamy go glownie do sprawdzania sesji przez /api/auth/me
@@ -123,6 +124,7 @@ function App() {
     setCurrentRoute("login");
   };
 
+  // Po poprawnej zmianie hasla zdejmujemy blokade pierwszego logowania
   const handlePasswordChanged = () => {
     setAuthenticatedUser((prev) => ({
       ...prev,
@@ -137,31 +139,33 @@ function App() {
   // Jak nie ma zalogowanego usera, pokazujemy prosty fallback dla goscia.
   const currentUser = authenticatedUser
     ? {
-      name:
-        `${authenticatedUser.firstName || ""} ${authenticatedUser.lastName || ""
+        name:
+          `${authenticatedUser.firstName || ""} ${
+            authenticatedUser.lastName || ""
           }`.trim() || authenticatedUser.login,
-      initials: (
-        `${authenticatedUser.firstName?.[0] || ""}${authenticatedUser.lastName?.[0] || ""
-        }` ||
-        authenticatedUser.login?.slice(0, 2) ||
-        "U"
-      ).toUpperCase(),
-      roleLabel:
-        authenticatedUser.role === "pracownik"
-          ? "Pracownik"
-          : authenticatedUser.role === "kierownik"
+        initials: (
+          `${authenticatedUser.firstName?.[0] || ""}${
+            authenticatedUser.lastName?.[0] || ""
+          }` ||
+          authenticatedUser.login?.slice(0, 2) ||
+          "U"
+        ).toUpperCase(),
+        roleLabel:
+          authenticatedUser.role === "pracownik"
+            ? "Pracownik"
+            : authenticatedUser.role === "kierownik"
             ? "Kierownik"
             : authenticatedUser.role === "administrator"
-              ? "Administrator"
-              : authenticatedUser.role === "superadmin"
-                ? "Superadministrator"
-                : "Użytkownik",
-    }
+            ? "Administrator"
+            : authenticatedUser.role === "superadmin"
+            ? "Superadministrator"
+            : "Użytkownik",
+      }
     : {
-      name: "Gość",
-      initials: "G",
-      roleLabel: "Gość",
-    };
+        name: "Gość",
+        initials: "G",
+        roleLabel: "Gość",
+      };
 
   // Prosta funkcja pomocnicza do placeholderow.
   // Uzywamy jej dla widokow, ktore jeszcze nie sa rozwiniete.
@@ -217,7 +221,26 @@ function App() {
         return renderPlaceholder("PRZEGLĄD");
 
       case "projects":
-        return renderPlaceholder("PROJEKTY");
+        return (
+          <div className="min-vh-100 bg-light">
+            <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+
+            <div className="d-flex">
+              <AppSidebar
+                currentRoute={currentRoute}
+                onNavigate={setCurrentRoute}
+                authenticatedUser={authenticatedUser}
+              />
+
+              <div className="flex-grow-1 p-4">
+                <ProjectsPage
+                  authToken={authToken}
+                  authenticatedUser={authenticatedUser}
+                />
+              </div>
+            </div>
+          </div>
+        );
 
       case "tasks":
         return (

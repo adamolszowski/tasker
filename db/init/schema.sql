@@ -335,3 +335,89 @@ VALUES (
   CURRENT_TIMESTAMP,
   TRUE
 );
+
+INSERT INTO users (
+  login,
+  password_hash,
+  first_name,
+  last_name,
+  email,
+  phone,
+  role_id,
+  approved_by_user_id,
+  approved_at,
+  must_change_password
+)
+VALUES
+(
+  'admin1',
+  crypt('Admin123!', gen_salt('bf', 10)),
+  'Adam',
+  'Administrator',
+  'admin1@tasker.local',
+  '600100101',
+  (SELECT id FROM roles WHERE name = 'administrator'),
+  (SELECT id FROM users WHERE login = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  FALSE
+),
+(
+  'admin2',
+  crypt('Admin123!', gen_salt('bf', 10)),
+  'Alicja',
+  'Administrator',
+  'admin2@tasker.local',
+  '600100102',
+  (SELECT id FROM roles WHERE name = 'administrator'),
+  (SELECT id FROM users WHERE login = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  FALSE
+),
+(
+  'kier1',
+  crypt('Kier123!', gen_salt('bf', 10)),
+  'Kamil',
+  'Kierownik',
+  'kier1@tasker.local',
+  '600200101',
+  (SELECT id FROM roles WHERE name = 'kierownik'),
+  (SELECT id FROM users WHERE login = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  FALSE
+),
+(
+  'kier2',
+  crypt('Kier123!', gen_salt('bf', 10)),
+  'Karolina',
+  'Kierownik',
+  'kier2@tasker.local',
+  '600200102',
+  (SELECT id FROM roles WHERE name = 'kierownik'),
+  (SELECT id FROM users WHERE login = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  FALSE
+),
+(
+  'prac1',
+  crypt('Prac123!', gen_salt('bf', 10)),
+  'Piotr',
+  'Pracownik',
+  'prac1@tasker.local',
+  '600300101',
+  (SELECT id FROM roles WHERE name = 'pracownik'),
+  (SELECT id FROM users WHERE login = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  FALSE
+),
+(
+  'prac2',
+  crypt('Prac123!', gen_salt('bf', 10)),
+  'Paulina',
+  'Pracownik',
+  'prac2@tasker.local',
+  '600300102',
+  (SELECT id FROM roles WHERE name = 'pracownik'),
+  (SELECT id FROM users WHERE login = 'superadmin'),
+  CURRENT_TIMESTAMP,
+  FALSE
+);
