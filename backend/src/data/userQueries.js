@@ -1,5 +1,4 @@
-// Wszystkie zapytania do users wrzucone do jednego pliku.
-// Nazwa jest prosta, po studencku - po prostu queries do userow.
+// Wszystkie zapytania do users.
 
 const sequelize = require("../db");
 
