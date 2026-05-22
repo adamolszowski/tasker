@@ -7,6 +7,7 @@ import AppSidebar from "../components/layout/AppSidebar";
 import AdminRolesPage from "../pages/AdminRolesPage";
 import UsersPage from "../pages/UserPage";
 import ChangePasswordPage from "../pages/ChangePasswordPage";
+import TasksPage from "../pages/TasksPage";
 
 // Adres backendu - uzywamy go glownie do sprawdzania sesji przez /api/auth/me
 const API_URL = "http://localhost:5000";
@@ -219,7 +220,26 @@ function App() {
         return renderPlaceholder("PROJEKTY");
 
       case "tasks":
-        return renderPlaceholder("ZADANIA");
+        return (
+          <div className="min-vh-100 bg-light">
+            <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+
+            <div className="d-flex">
+              <AppSidebar
+                currentRoute={currentRoute}
+                onNavigate={setCurrentRoute}
+                authenticatedUser={authenticatedUser}
+              />
+
+              <div className="flex-grow-1 p-4">
+                <TasksPage
+                  authToken={authToken}
+                  authenticatedUser={authenticatedUser}
+                />
+              </div>
+            </div>
+          </div>
+        );
 
       case "users":
         return (
