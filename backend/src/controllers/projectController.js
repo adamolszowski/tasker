@@ -3,7 +3,7 @@
 
 const sequelize = require("../db");
 const {
-      findProjectStatuses,
+  findProjectStatuses,
   findProjectStatusById,
   findDefaultProjectStatus,
   findProjectById,
@@ -16,15 +16,15 @@ const {
   addProjectMember,
   removeProjectMember,
 } = require("../data/projectQueries");
-const { findUserWithRoleById } = require("../data/projectQueries");
-const{
+const { findUserWithRoleById } = require("../data/userQueries");
+const {
   validateCreateProjectInput,
   validateUpdateProjectInput,
   validateProjectStatusInput,
-  validateProjectMemberInput, 
+  validateProjectMemberInput,
 } = require("../validators/projectValidators");
 const {
-    canViewProject,
+  canViewProject,
   canCreateProject,
   canEditProject,
   canChangeProjectStatus,
@@ -32,73 +32,73 @@ const {
 } = require("../permissions/projectPermissions");
 
 async function getProjectStatuses(req, res) {
-    try {
-        const status = await findProjectStatuses();
+  try {
+    const statuses = await findProjectStatuses();
 
-        return res.status(200).json({ statuses });
-    } catch (error) {
-        return res.status(500).json({
-            message: "Błąd podczas pobierania statusów projektu.",
-            error: error.message,
-        });
-    }
-}
-
-async function getProjects(req,res) {
-     try {
-        const  projects = await findProjectsForUser(req.auth);
-
-        return res.status(200).json({ projects });
-    } catch (error) {
-        return res.status(500).json({
-            message: "Błąd podczas pobierania projektów.",
-            error: error.message,
-        });
-    }
-}
-    
-async function createProjectHandler(req, res) {
- const validation = validateCreateProjectInput(req.body);
- 
- if (validation.error) {
-    return res.status(400).json({ message: validation.error });
- }
-
- if (!canCreateProject(req.auth)) {
-    return res.status(403).json({
-        message: "Brak Uprawnień do towrzenia projektu.",
+    return res.status(200).json({ statuses });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Błąd podczas pobierania statusów projektów.",
+      error: error.message,
     });
- }
+  }
+}
 
- const transaction = await sequelize.transaction();
+async function getProjects(req, res) {
+  try {
+    const projects = await findProjectsForUser(req.auth);
 
- try {
+    return res.status(200).json({ projects });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Błąd podczas pobierania projektów.",
+      error: error.message,
+    });
+  }
+}
+
+async function createProjectHandler(req, res) {
+  const validation = validateCreateProjectInput(req.body);
+
+  if (validation.error) {
+    return res.status(400).json({ message: validation.error });
+  }
+
+  if (!canCreateProject(req.auth)) {
+    return res.status(403).json({
+      message: "Brak uprawnień do tworzenia projektu.",
+    });
+  }
+
+  const transaction = await sequelize.transaction();
+
+  try {
     const defaultStatus = await findDefaultProjectStatus();
 
     if (!defaultStatus) {
-        await transaction.rollback();
-        return res.status(500).json({
-            message: "Brak domyślnego statusu projektu w bazie."
-        });
+      await transaction.rollback();
+      return res.status(500).json({
+        message: "Brak domyślnego statusu projektu w bazie.",
+      });
     }
 
     const project = await createProject(
-        {
-            name: validation.data.name,
-            description: validation.data.description,
-            createdByUserId: req.auth.sub,
-            statusId: defaultStatus.id,
-        },
-        transaction
+      {
+        name: validation.data.name,
+        description: validation.data.description,
+        createdByUserId: req.auth.sub,
+        statusId: defaultStatus.id,
+      },
+      transaction
     );
 
     await addProjectMember(
-        {
-            projectId: project.id,
-            userId: req.auth.sub,
-            addedByUserId: req.auth.sub,
-        },
-        transaction
+      {
+        projectId: project.id,
+        userId: req.auth.sub,
+        addedByUserId: req.auth.sub,
+      },
+      transaction
     );
 
     await transaction.commit();
@@ -106,140 +106,140 @@ async function createProjectHandler(req, res) {
     const fullProject = await findProjectById(project.id);
 
     return res.status(201).json({
-        message: "Projekt został utowrzony.",
-        project: fullProject,
-    }); 
-} catch (error) {
+      message: "Projekt został utworzony.",
+      project: fullProject,
+    });
+  } catch (error) {
     await transaction.rollback();
 
     return res.status(500).json({
-        message: "Błąd podczas tworzenia projektu.",
-        error: error.message,
+      message: "Błąd podczas tworzenia projektu.",
+      error: error.message,
     });
- }
+  }
 }
 
-async function updateProjectHandler(req , res) {
-    const validation = validateUpdateProjectInput(req.body);
+async function updateProjectHandler(req, res) {
+  const validation = validateUpdateProjectInput(req.body);
 
-    if (validation.error) {
-        return res.status(400).json({ message: validation.error });
+  if (validation.error) {
+    return res.status(400).json({ message: validation.error });
+  }
+
+  const projectId = Number(req.params.id);
+
+  if (!projectId || Number.isNaN(projectId)) {
+    return res.status(400).json({
+      message: "Nieprawidłowe ID projektu.",
+    });
+  }
+
+  const transaction = await sequelize.transaction();
+
+  try {
+    const project = await findProjectById(projectId, transaction);
+
+    if (!project) {
+      await transaction.rollback();
+      return res.status(404).json({ message: "Projekt nie istnieje." });
     }
 
-    const projectId = Number(req.params.id);
-
-    if (!projectId || Number.isNaN(projectId)) {
-        return res.status(400).json({
-            message: "Nieprawidłowe ID projektu"
-        });
+    if (!canEditProject(req.auth, project)) {
+      await transaction.rollback();
+      return res.status(403).json({
+        message: "Brak uprawnień do edycji tego projektu.",
+      });
     }
- 
-    const transaction = await sequelize.transaction();
 
-    try{
-        const project = await findProjectById(projectId, transaction);
+    await updateProject(
+      {
+        projectId,
+        name: validation.data.name,
+        description: validation.data.description,
+      },
+      transaction
+    );
 
-        if (!project) {
-            await transaction.rollback();
-            return res.status(404).json({ message: "Projekt nie istnieje."});
-        }
+    await transaction.commit();
 
-        if (!canEditProject(req.auth, project)) {
-            await transaction.rollback();
-            return res.status(403),json({
-                message: "Brak uprawnień do edycji tego projektu",
-            });
-        }
+    const fullProject = await findProjectById(projectId);
 
-        await updateProject(
-            {
-                projectId,
-                name: validation.data.name,
-                description: validation.data.description,
-            },
-            transaction
-        );
+    return res.status(200).json({
+      message: "Projekt został zaktualizowany.",
+      project: fullProject,
+    });
+  } catch (error) {
+    await transaction.rollback();
 
-        await transaction.commit();
-
-        const fullProject = await findProjectById(projectId);
-
-        return res.status(200).json({
-            message: "Projekt został zaktualizowany.",
-            project: fullProject,
-        });
-    } catch (error) {
- await transaction.rollback();
-
- return res.status(500).json({
-    message: "Błąd podczas edycji projektu.",
-    error: error.message,
- });
-    }
+    return res.status(500).json({
+      message: "Błąd podczas edycji projektu.",
+      error: error.message,
+    });
+  }
 }
 
-async function changeProjectStatusHandler(req , res) {
-    const validation = validateProjectStatusInput(req.body);
+async function changeProjectStatusHandler(req, res) {
+  const validation = validateProjectStatusInput(req.body);
 
-    if (validation.error) {
-        return res.status(400).json({ message: validation.error});
+  if (validation.error) {
+    return res.status(400).json({ message: validation.error });
+  }
+
+  const projectId = Number(req.params.id);
+
+  if (!projectId || Number.isNaN(projectId)) {
+    return res.status(400).json({
+      message: "Nieprawidłowe ID projektu.",
+    });
+  }
+
+  const transaction = await sequelize.transaction();
+
+  try {
+    const project = await findProjectById(projectId, transaction);
+
+    if (!project) {
+      await transaction.rollback();
+      return res.status(404).json({ message: "Projekt nie istnieje." });
     }
 
-    const projectId = Number(req.params.id);
-
-    if (!projectId || Number.isNaN(projectId)) {
-        return res.status(400).json({
-            message: "Nieprawidłowe ID projektu",
-        });
+    if (!canChangeProjectStatus(req.auth, project)) {
+      await transaction.rollback();
+      return res.status(403).json({
+        message: "Brak uprawnień do zmiany statusu tego projektu.",
+      });
     }
 
-    const transaction = await sequelize.transaction();
+    const status = await findProjectStatusById(validation.data.statusId);
 
-    try {
-        const project = await findProjectById(projectId, transaction);
+    if (!status) {
+      await transaction.rollback();
+      return res.status(404).json({ message: "Status projektu nie istnieje." });
+    }
 
-        if (!project) {
-            await transaction.rollback();
-            return res.status(400).json({ message: "Projekt nie istnieje."});
-        }
+    await updateProjectStatus(
+      {
+        projectId,
+        statusId: validation.data.statusId,
+      },
+      transaction
+    );
 
-        if (!canChangeProjectStatus(req.auth, project)) {
-            await transaction.rollback();
-            return res.status(403).json({
-                message: "Brak uprawnień do zmiany statusu tego projektu",
-            });
-        }
+    await transaction.commit();
 
-        const status = await findProjectStatusById(validation.data.statusId);
+    const fullProject = await findProjectById(projectId);
 
-        if (!status) {
-            await transaction.rollback();
-            return res.status(400).json({ message: "Status projektu nie istnieje"});
-        }
+    return res.status(200).json({
+      message: "Status projektu został zmieniony.",
+      project: fullProject,
+    });
+  } catch (error) {
+    await transaction.rollback();
 
-        await updateProjectStatus(
-            {
-                projectId,
-                statusId: validation.data.statusId,
-            },
-            transaction
-        );
-
-        await transaction.commit();
-
-        const fullProject = await findProjectById(projectId);
-
-        return res.status(200).json({
-            message: "Status projektu został zmieniony.",
-            project: fullProject,
-        });
-    } catch (error) {
-        await transaction.rollback();
-    
-        return res.status(500).json({
-            message: "Błąd podczas zmiany statusu projektu projektu.",
-            error: error.message,
-        });
+    return res.status(500).json({
+      message: "Błąd podczas zmiany statusu projektu.",
+      error: error.message,
+    });
   }
 }
 
@@ -248,7 +248,7 @@ async function getProjectMembersHandler(req, res) {
 
   if (!projectId || Number.isNaN(projectId)) {
     return res.status(400).json({
-        message: "Nieprawidłowe ID projektu.",
+      message: "Nieprawidłowe ID projektu.",
     });
   }
 
@@ -256,15 +256,15 @@ async function getProjectMembersHandler(req, res) {
     const project = await findProjectById(projectId);
 
     if (!project) {
-        return res.status(404).json({ message: "Projekt nie istnieje."});
+      return res.status(404).json({ message: "Projekt nie istnieje." });
     }
 
     const member = await isUserProjectMember(projectId, req.auth.sub);
 
     if (!canViewProject(req.auth, project, member)) {
-        return res.status(403).json({
-            message: "Brak uprawnień do poglądu tego projektu.",
-        });
+      return res.status(403).json({
+        message: "Brak uprawnień do podglądu tego projektu.",
+      });
     }
 
     const members = await findProjectMembers(projectId);
@@ -272,37 +272,37 @@ async function getProjectMembersHandler(req, res) {
     return res.status(200).json({ members });
   } catch (error) {
     return res.status(500).json({
-        message: "Błąd podczas pobierania członków projektu.",
-        error: error.message,
+      message: "Błąd podczas pobierania członków projektu.",
+      error: error.message,
     });
   }
 }
 
 async function addProjectMemberHandler(req, res) {
-    const projectId = Number(req.params.id);
-    const validation = validateProjectMemberInput(req.body);
+  const projectId = Number(req.params.id);
+  const validation = validateProjectMemberInput(req.body);
 
-    if (!projectId || Number.isNaN(projectId)) {
-        return res.status(400).json({
-            message: "Nieprawidłowe ID projektu",
-        });
+  if (!projectId || Number.isNaN(projectId)) {
+    return res.status(400).json({
+      message: "Nieprawidłowe ID projektu.",
+    });
+  }
+
+  if (validation.error) {
+    return res.status(400).json({ message: validation.error });
+  }
+
+  const transaction = await sequelize.transaction();
+
+  try {
+    const project = await findProjectById(projectId, transaction);
+
+    if (!project) {
+      await transaction.rollback();
+      return res.status(404).json({ message: "Projekt nie istnieje." });
     }
 
-    if (validation.error) {
-        return res.status(400).json({ message: validation.error });
-    }
-
-    const transaction = await sequelize.transaction();
-
-    try{
-        const project = await findProjectById(projectId, transaction);
-
-        if (!project) {
-            await transaction.rollback();
-            return res.status(404).json({ message: "Projekt nie istnieje."});
-        }
-
-        if (!canManageProjectMembers(req.auth, project)) {
+    if (!canManageProjectMembers(req.auth, project)) {
       await transaction.rollback();
       return res.status(403).json({
         message: "Brak uprawnień do zarządzania członkami tego projektu.",
@@ -430,4 +430,4 @@ module.exports = {
   getProjectMembers: getProjectMembersHandler,
   addProjectMember: addProjectMemberHandler,
   removeProjectMember: removeProjectMemberHandler,
-};   
+};

@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS roles CASCADE;
 
 DROP FUNCTION IF EXISTS set_updated_at() CASCADE;
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE roles (
     id              BIGSERIAL PRIMARY KEY,
@@ -299,18 +300,18 @@ INSERT INTO roles (name) VALUES
 ('pracownik');
 
 INSERT INTO project_statuses (name) VALUES
-('w_toku'),
+('w toku'),
 ('wykonany'),
 ('usuniety');
 
 INSERT INTO task_statuses (name) VALUES
-('do_zrobienia'),
-('w_trakcie'),
-('zrobione');
+('Do zrobienia'),
+('W trakcie'),
+('Zrobione');
 
 INSERT INTO task_priorities (name) VALUES
 ('niski'),
-('sredni'),
+('średni'),
 ('wysoki');
 
 INSERT INTO users (

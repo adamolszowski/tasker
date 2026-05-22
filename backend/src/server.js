@@ -48,6 +48,7 @@ const {
 
 // Trasy projektu sa wydzielone do osobnego pliku, zeby potem latwiej bylo to rozwijac
 const projectRoutes = require("./routes/projectRoutes");
+const taskRoutes = require("./routes/taskRoutes");
 
 // Tworzymy aplikację Express
 const app = express();
@@ -62,6 +63,10 @@ app.use(cors());
 
 // Włączenie obsługi JSON w requestach
 app.use(express.json());
+
+// Podpinamy trasy projektow z osobnego pliku
+app.use(projectRoutes);
+app.use(taskRoutes);
 
 // Generuje token JWT dla poprawnie zalogowanego usera.
 // W tym tokenie zapisujemy podstawowe dane,
@@ -109,23 +114,6 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
-// Endpoint testowy do pobrania statusów projektów z tabeli słownikowej
-app.get("/api/project-statuses", async (req, res) => {
-  try {
-    const [rows] = await sequelize.query(`
-      SELECT id, name
-      FROM project_statuses
-      ORDER BY id ASC
-    `);
-
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({
-      message: "Błąd podczas pobierania statusów projektu.",
-      error: error.message,
-    });
-  }
-});
 
 // Endpoint rejestracji nowego usera.
 app.post("/api/auth/register", async (req, res) => {

@@ -15,7 +15,7 @@ async function findProjectStatuses() {
  return rows;
 }
 
-async function findProjectStatusById(status_id) {
+async function findProjectStatusById(statusId) {
     const [rows] = await sequelize.query(
        `
     SELECT id, name

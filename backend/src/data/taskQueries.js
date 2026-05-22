@@ -5,7 +5,7 @@ async function findTaskStatuses() {
     const [rows] = await sequelize.query(
         `
         SELECT id, name
-        FROM taks_statuses
+        FROM task_statuses
         ORDER BY id ASC
         `
     );
