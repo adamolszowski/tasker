@@ -15,6 +15,7 @@ function TaskListTable({
   canEditTask,
   canDeleteTask,
   canChangeStatus,
+  onOpenComments,
   statusChangingTaskId,
   deletingTaskId,
 }) {
@@ -137,6 +138,14 @@ function TaskListTable({
               <td>
                 <div className="d-flex gap-2 flex-wrap">
                   {/* przycisk edycji tylko jesli user ma do niej uprawnienia */}
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    onClick={() => onOpenComments(task)}
+                  >
+                    Komentarze
+                  </Button>
+
                   {canEdit && (
                     <Button
                       variant="dark"

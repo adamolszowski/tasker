@@ -49,6 +49,7 @@ const {
 // Trasy projektu sa wydzielone do osobnego pliku, zeby potem latwiej bylo to rozwijac
 const projectRoutes = require("./routes/projectRoutes");
 const taskRoutes = require("./routes/taskRoutes");
+const commentRoutes = require("./routes/commentRoutes");
 
 // Tworzymy aplikację Express
 const app = express();
@@ -67,6 +68,7 @@ app.use(express.json());
 // Podpinamy trasy projektow z osobnego pliku
 app.use(projectRoutes);
 app.use(taskRoutes);
+app.use(commentRoutes);
 
 // Generuje token JWT dla poprawnie zalogowanego usera.
 // W tym tokenie zapisujemy podstawowe dane,

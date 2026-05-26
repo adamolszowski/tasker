@@ -18,6 +18,7 @@ function TaskKanbanBoard({
   canEditTask,
   canDeleteTask,
   canChangeStatus,
+  onOpenComments,
   statusChangingTaskId,
   deletingTaskId,
 }) {
@@ -92,6 +93,14 @@ function TaskKanbanBoard({
                         {/* przyciski akcji */}
                         <div className="d-flex gap-2 flex-wrap">
                           {/* przycisk edycji tylko jesli user moze edytowac zadanie */}
+                          <Button
+                            variant="outline-secondary"
+                            size="sm"
+                            onClick={() => onOpenComments(task)}
+                          >
+                            Komentarze
+                          </Button>
+
                           {canEditTask(task) && (
                             <Button variant="dark" size="sm" onClick={() => onEdit(task)}>
                               Edytuj

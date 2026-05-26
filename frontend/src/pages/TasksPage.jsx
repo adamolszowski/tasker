@@ -8,6 +8,7 @@ import Stack from "react-bootstrap/Stack";
 import TaskForm from "../components/tasks/TaskForm";
 import TaskListTable from "../components/tasks/TaskListTable";
 import TaskKanbanBoard from "../components/tasks/TaskKanbanBoard";
+import TaskCommentsSection from "../components/comments/TaskCommentsSection";
 import {
   getTasks,
   getTaskStatuses,
@@ -20,76 +21,34 @@ import {
   changeTaskStatus,
 } from "../api/tasksApi";
 
-// glowny widok modulu zadan
-// tutaj trzymamy liste zadan, filtry, formularz oraz obsluge akcji typu edycja, usuwanie i zmiana statusu
 function TasksPage({ authToken, authenticatedUser }) {
-  // lista zadan
   const [tasks, setTasks] = useState([]);
-
-  // lista statusow zadan
   const [statuses, setStatuses] = useState([]);
-
-  // lista priorytetow
   const [priorities, setPriorities] = useState([]);
-
-  // lista projektow dostepnych dla usera
   const [projects, setProjects] = useState([]);
-
-  // userzy ktorych mozna przypisac do zadania w wybranym projekcie
   const [assignableUsers, setAssignableUsers] = useState([]);
-
-  // tryb widoku: lista albo kanban
   const [viewMode, setViewMode] = useState("list");
-
-  // tekst wpisany w wyszukiwarce
   const [searchTerm, setSearchTerm] = useState("");
-
-  // aktualnie wybrany filtr projektu
   const [selectedProjectId, setSelectedProjectId] = useState("");
-
-  // aktualnie wybrany filtr statusu
   const [selectedStatusId, setSelectedStatusId] = useState("");
-
-  // aktualnie wybrany filtr priorytetu
   const [selectedPriorityId, setSelectedPriorityId] = useState("");
-
-  // flaga ladowania calego widoku
   const [isLoading, setIsLoading] = useState(true);
-
-  // flaga zapisywania formularza
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
-
-  // flaga ladowania userow projektu do przypisania
   const [isAssignableUsersLoading, setIsAssignableUsersLoading] = useState(false);
-
-  // id zadania ktoremu wlasnie zmieniamy status
   const [statusChangingTaskId, setStatusChangingTaskId] = useState(null);
-
-  // id zadania ktore wlasnie usuwamy
   const [deletingTaskId, setDeletingTaskId] = useState(null);
-
-  // tryb formularza: create albo edit
   const [formMode, setFormMode] = useState(null);
-
-  // zadanie ktore aktualnie edytujemy
   const [editingTask, setEditingTask] = useState(null);
-
-  // komunikat bledu
+  const [selectedTaskForComments, setSelectedTaskForComments] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
-
-  // komunikat sukcesu
   const [successMessage, setSuccessMessage] = useState("");
 
-  // sprawdzamy czy user jest administratorem albo superadminem
   const isAdminLike =
     authenticatedUser?.role === "administrator" ||
     authenticatedUser?.role === "superadmin";
 
-  // tylko kierownik oraz admin/superadmin moga tworzyc zadania
   const canCreate = authenticatedUser?.role === "kierownik" || isAdminLike;
 
-  // tworzymy zbior id projektow ktore naleza do zalogowanego usera
-  // useMemo zeby nie liczyc tego na nowo bez potrzeby przy kazdym renderze
   const ownedProjectIds = useMemo(() => {
     if (!authenticatedUser) {
       return new Set();
@@ -102,13 +61,11 @@ function TasksPage({ authToken, authenticatedUser }) {
     );
   }, [projects, authenticatedUser]);
 
-  // pomocnicza funkcja do czyszczenia komunikatow
   const resetMessages = () => {
     setErrorMessage("");
     setSuccessMessage("");
   };
 
-  // pobieramy zadania z backendu na podstawie aktualnych filtrow
   const loadTasks = async () => {
     const data = await getTasks(authToken, {
       projectId: selectedProjectId || null,
@@ -119,8 +76,6 @@ function TasksPage({ authToken, authenticatedUser }) {
     setTasks(data.tasks || []);
   };
 
-  // pobieramy slowniki potrzebne do modulu zadan:
-  // statusy, priorytety i projekty
   const loadDictionaries = async () => {
     const [statusesData, prioritiesData, projectsData] = await Promise.all([
       getTaskStatuses(authToken),
@@ -133,8 +88,6 @@ function TasksPage({ authToken, authenticatedUser }) {
     setProjects(projectsData.projects || []);
   };
 
-  // ladowanie danych po wejsciu na widok
-  // robimy to po zalogowaniu i gdy zmieni sie user albo token
   useEffect(() => {
     const loadData = async () => {
       if (!authenticatedUser || !authToken) {
@@ -145,8 +98,6 @@ function TasksPage({ authToken, authenticatedUser }) {
       try {
         setIsLoading(true);
         resetMessages();
-
-        // pobieramy slowniki i zadania rownoczesnie
         await Promise.all([loadDictionaries(), loadTasks()]);
       } catch (error) {
         setErrorMessage(error.message || "Nie udało się pobrać zadań.");
@@ -158,7 +109,6 @@ function TasksPage({ authToken, authenticatedUser }) {
     loadData();
   }, [authToken, authenticatedUser?.id]);
 
-  // przeladowanie listy zadan po zmianie filtrow
   useEffect(() => {
     const reload = async () => {
       if (!authenticatedUser || !authToken) {
@@ -178,8 +128,23 @@ function TasksPage({ authToken, authenticatedUser }) {
     reload();
   }, [selectedProjectId, selectedStatusId, selectedPriorityId]);
 
-  // dodatkowe filtrowanie po tekscie wpisanym w wyszukiwarce
-  // useMemo zeby nie przeliczac tego niepotrzebnie
+  useEffect(() => {
+    if (!selectedTaskForComments) {
+      return;
+    }
+
+    const freshTask = tasks.find((task) => task.id === selectedTaskForComments.id);
+
+    if (!freshTask) {
+      setSelectedTaskForComments(null);
+      return;
+    }
+
+    if (freshTask !== selectedTaskForComments) {
+      setSelectedTaskForComments(freshTask);
+    }
+  }, [tasks, selectedTaskForComments]);
+
   const filteredTasks = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
 
@@ -199,7 +164,6 @@ function TasksPage({ authToken, authenticatedUser }) {
     });
   }, [tasks, searchTerm]);
 
-  // otwieramy formularz tworzenia zadania
   const openCreateForm = () => {
     resetMessages();
     setFormMode("create");
@@ -207,8 +171,6 @@ function TasksPage({ authToken, authenticatedUser }) {
     setAssignableUsers([]);
   };
 
-  // otwieramy formularz edycji zadania
-  // dodatkowo pobieramy userow z projektu tego zadania, zeby bylo mozna kogos przypisac
   const openEditForm = async (task) => {
     resetMessages();
     setFormMode("edit");
@@ -226,16 +188,21 @@ function TasksPage({ authToken, authenticatedUser }) {
     }
   };
 
-  // zamykamy formularz i czyscimy dane pomocnicze
   const closeForm = () => {
     setFormMode(null);
     setEditingTask(null);
     setAssignableUsers([]);
   };
 
-  // ta funkcja uruchamia sie gdy w formularzu zmieni sie projekt
-  // pobieramy wtedy userow z tego projektu, ktorych mozna przypisac do zadania
-  // useCallback zeby funkcja nie dostawala nowej referencji przy kazdym renderze
+  const openCommentsPanel = (task) => {
+    resetMessages();
+    setSelectedTaskForComments(task);
+  };
+
+  const closeCommentsPanel = () => {
+    setSelectedTaskForComments(null);
+  };
+
   const handleProjectChangeForForm = useCallback(async (projectId) => {
     if (!projectId) {
       setAssignableUsers([]);
@@ -254,33 +221,24 @@ function TasksPage({ authToken, authenticatedUser }) {
     }
   }, [authToken]);
 
-  // obsluga wysylki formularza tworzenia/edycji
   const handleFormSubmit = async (payload) => {
     try {
       setIsFormSubmitting(true);
       resetMessages();
 
-      // jesli jest tryb edit to aktualizujemy istniejace zadanie
       if (formMode === "edit" && editingTask) {
         const data = await updateTask(authToken, editingTask.id, payload);
-
-        // podmieniamy tylko to jedno zadanie w stanie
         setTasks((prev) =>
           prev.map((task) => (task.id === editingTask.id ? data.task : task))
         );
         setSuccessMessage(data.message || "Zadanie zostało zaktualizowane.");
       } else {
-        // w innym przypadku tworzymy nowe zadanie
         const data = await createTask(authToken, payload);
-
-        // nowe zadanie wrzucamy na poczatek listy
         setTasks((prev) => [data.task, ...prev]);
         setSuccessMessage(data.message || "Zadanie zostało utworzone.");
       }
 
       closeForm();
-
-      // po zapisie jeszcze raz pobieramy zadania z backendu, zeby miec pewne aktualne dane
       await loadTasks();
     } catch (error) {
       setErrorMessage(error.message || "Nie udało się zapisać zadania.");
@@ -289,17 +247,18 @@ function TasksPage({ authToken, authenticatedUser }) {
     }
   };
 
-  // usuwanie zadania
   const handleDeleteTask = async (taskId) => {
     try {
       setDeletingTaskId(taskId);
       resetMessages();
 
       const data = await deleteTask(authToken, taskId);
-
-      // usuwamy zadanie z lokalnej listy
       setTasks((prev) => prev.filter((task) => task.id !== taskId));
       setSuccessMessage(data.message || "Zadanie zostało usunięte.");
+
+      if (selectedTaskForComments?.id === taskId) {
+        setSelectedTaskForComments(null);
+      }
     } catch (error) {
       setErrorMessage(error.message || "Nie udało się usunąć zadania.");
     } finally {
@@ -307,15 +266,12 @@ function TasksPage({ authToken, authenticatedUser }) {
     }
   };
 
-  // zmiana statusu zadania
   const handleChangeStatus = async (taskId, statusId) => {
     try {
       setStatusChangingTaskId(taskId);
       resetMessages();
 
       const data = await changeTaskStatus(authToken, taskId, { statusId });
-
-      // podmieniamy tylko zadanie ktoremu zmieniono status
       setTasks((prev) =>
         prev.map((task) => (task.id === taskId ? data.task : task))
       );
@@ -327,7 +283,6 @@ function TasksPage({ authToken, authenticatedUser }) {
     }
   };
 
-  // sprawdzamy czy user moze edytowac dane zadanie
   const canEditTask = (task) => {
     if (!authenticatedUser || !task) {
       return false;
@@ -340,10 +295,8 @@ function TasksPage({ authToken, authenticatedUser }) {
     return authenticatedUser.role === "kierownik" && ownedProjectIds.has(task.projectId);
   };
 
-  // logika usuwania jest taka sama jak dla edycji
   const canDeleteTask = (task) => canEditTask(task);
 
-  // sprawdzamy czy user moze zmienic status zadania
   const canChangeStatus = (task) => {
     if (!authenticatedUser || !task) {
       return false;
@@ -364,7 +317,12 @@ function TasksPage({ authToken, authenticatedUser }) {
     return false;
   };
 
-  // jesli nie ma zalogowanego usera to pokazujemy komunikat
+  const canModerateComments = selectedTaskForComments
+    ? isAdminLike ||
+      (authenticatedUser?.role === "kierownik" &&
+        ownedProjectIds.has(selectedTaskForComments.projectId))
+    : false;
+
   if (!authenticatedUser) {
     return (
       <Alert variant="warning">
@@ -385,7 +343,6 @@ function TasksPage({ authToken, authenticatedUser }) {
               </p>
             </div>
 
-            {/* przycisk tworzenia zadania widza tylko role ktore moga tworzyc */}
             {canCreate && (
               <Button variant="dark" onClick={openCreateForm}>
                 Nowe zadanie
@@ -393,7 +350,6 @@ function TasksPage({ authToken, authenticatedUser }) {
             )}
           </div>
 
-          {/* filtry i przelacznik widoku */}
           <Stack direction="horizontal" gap={2} className="flex-wrap">
             <Form.Control
               style={{ maxWidth: "260px" }}
@@ -458,11 +414,9 @@ function TasksPage({ authToken, authenticatedUser }) {
         </Card.Body>
       </Card>
 
-      {/* komunikaty bledu i sukcesu */}
       {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
       {successMessage && <Alert variant="success">{successMessage}</Alert>}
 
-      {/* formularz pokazujemy tylko kiedy jest aktywny tryb create albo edit */}
       {formMode && (
         <TaskForm
           mode={formMode}
@@ -478,7 +432,6 @@ function TasksPage({ authToken, authenticatedUser }) {
         />
       )}
 
-      {/* stan ladowania */}
       {isLoading ? (
         <Card className="border">
           <Card.Body className="text-center py-4">
@@ -487,10 +440,8 @@ function TasksPage({ authToken, authenticatedUser }) {
           </Card.Body>
         </Card>
       ) : filteredTasks.length === 0 ? (
-        // jesli nie ma zadnych zadan po filtrowaniu
         <Alert variant="secondary">Brak zadań do wyświetlenia.</Alert>
       ) : viewMode === "list" ? (
-        // widok listy
         <Card className="border">
           <Card.Body className="p-0">
             <TaskListTable
@@ -499,6 +450,7 @@ function TasksPage({ authToken, authenticatedUser }) {
               onEdit={openEditForm}
               onDelete={handleDeleteTask}
               onChangeStatus={handleChangeStatus}
+              onOpenComments={openCommentsPanel}
               canEditTask={canEditTask}
               canDeleteTask={canDeleteTask}
               canChangeStatus={canChangeStatus}
@@ -508,18 +460,28 @@ function TasksPage({ authToken, authenticatedUser }) {
           </Card.Body>
         </Card>
       ) : (
-        // widok kanban
         <TaskKanbanBoard
           tasks={filteredTasks}
           statuses={statuses}
           onEdit={openEditForm}
           onDelete={handleDeleteTask}
           onChangeStatus={handleChangeStatus}
+          onOpenComments={openCommentsPanel}
           canEditTask={canEditTask}
           canDeleteTask={canDeleteTask}
           canChangeStatus={canChangeStatus}
           statusChangingTaskId={statusChangingTaskId}
           deletingTaskId={deletingTaskId}
+        />
+      )}
+
+      {selectedTaskForComments && (
+        <TaskCommentsSection
+          authToken={authToken}
+          task={selectedTaskForComments}
+          authenticatedUser={authenticatedUser}
+          canModerateComments={canModerateComments}
+          onClose={closeCommentsPanel}
         />
       )}
     </div>
