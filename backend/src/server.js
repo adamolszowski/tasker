@@ -50,6 +50,7 @@ const {
 const projectRoutes = require("./routes/projectRoutes");
 const taskRoutes = require("./routes/taskRoutes");
 const commentRoutes = require("./routes/commentRoutes");
+const messageRoutes = require("./routes/messageRoutes");
 
 // Tworzymy aplikację Express
 const app = express();
@@ -69,6 +70,7 @@ app.use(express.json());
 app.use(projectRoutes);
 app.use(taskRoutes);
 app.use(commentRoutes);
+app.use(messageRoutes);
 
 // Generuje token JWT dla poprawnie zalogowanego usera.
 // W tym tokenie zapisujemy podstawowe dane,
