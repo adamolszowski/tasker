@@ -13,7 +13,7 @@ const bcrypt = require("bcryptjs");
 // Import JWT
 const jwt = require("jsonwebtoken");
 
-// Polaczenie z baza jest teraz osobno w db.js
+// Polaczenie z baza jest w db.js
 const sequelize = require("./db");
 
 // Middleware auth wyciagniete do osobnego pliku
@@ -51,6 +51,7 @@ const projectRoutes = require("./routes/projectRoutes");
 const taskRoutes = require("./routes/taskRoutes");
 const commentRoutes = require("./routes/commentRoutes");
 const messageRoutes = require("./routes/messageRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 // Tworzymy aplikację Express
 const app = express();
@@ -71,6 +72,7 @@ app.use(projectRoutes);
 app.use(taskRoutes);
 app.use(commentRoutes);
 app.use(messageRoutes);
+app.use(notificationRoutes);
 
 // Generuje token JWT dla poprawnie zalogowanego usera.
 // W tym tokenie zapisujemy podstawowe dane,

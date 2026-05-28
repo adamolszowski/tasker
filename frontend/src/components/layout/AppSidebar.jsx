@@ -5,24 +5,40 @@ import Button from "react-bootstrap/Button";
 // Pomocniczy przycisk do bocznego menu.
 // Dzieki temu nie powtarzamy ciagle tego samego kodu
 // dla kazdego elementu nawigacji.
-function SidebarButton({ label, isActive, onClick }) {
+function SidebarButton({ label, isActive, onClick, badge = null }) {
   return (
     <Button
       variant={isActive ? "dark" : "outline-dark"}
-      className="w-100 text-start"
+      className="w-100 text-start d-flex justify-content-between align-items-center"
       onClick={onClick}
     >
-      {label}
+      <span>{label}</span>
+
+      {badge !== null && (
+        <span
+          className={`badge rounded-pill ${
+            isActive ? "bg-light text-dark" : "bg-dark text-white"
+          }`}
+        >
+          {badge}
+        </span>
+      )}
     </Button>
   );
 }
 
 // Lewy panel nawigacji aplikacji.
 // Stad user moze przechodzic miedzy glownymi widokami systemu.
-function AppSidebar({ currentRoute, onNavigate, authenticatedUser }) {
+function AppSidebar({
+  currentRoute,
+  onNavigate,
+  authenticatedUser,
+  unreadNotificationsCount = 0,
+}) {
   const userRole = authenticatedUser?.role;
 
-  const canSeeAdminRoles = userRole === "administrator" || userRole === "superadmin";
+  const canSeeAdminRoles =
+    userRole === "administrator" || userRole === "superadmin";
 
   return (
     <div
@@ -66,11 +82,11 @@ function AppSidebar({ currentRoute, onNavigate, authenticatedUser }) {
 
           {/* Widok do zarzadzania rolami */}
           {canSeeAdminRoles && (
-          <SidebarButton
-            label="Zarządzanie rolami"
-            isActive={currentRoute === "admin-roles"}
-            onClick={() => onNavigate("admin-roles")}
-          />
+            <SidebarButton
+              label="Zarządzanie rolami"
+              isActive={currentRoute === "admin-roles"}
+              onClick={() => onNavigate("admin-roles")}
+            />
           )}
         </Nav>
       </div>
@@ -94,6 +110,7 @@ function AppSidebar({ currentRoute, onNavigate, authenticatedUser }) {
             label="Powiadomienia"
             isActive={currentRoute === "notifications"}
             onClick={() => onNavigate("notifications")}
+            badge={unreadNotificationsCount > 0 ? unreadNotificationsCount : null}
           />
         </Nav>
       </div>

@@ -1,5 +1,4 @@
 // Plik do polaczenia z baza danych.
-// Trzymamy to osobno, zeby server.js byl krotszy i czytelniejszy.
 
 const { Sequelize } = require("sequelize");
 

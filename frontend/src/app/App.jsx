@@ -9,6 +9,8 @@ import UsersPage from "../pages/UserPage";
 import ChangePasswordPage from "../pages/ChangePasswordPage";
 import ProjectsPage from "../pages/ProjectsPage";
 import TasksPage from "../pages/TasksPage";
+import NotificationsPage from "../pages/NotificationsPage";
+import { getUnreadNotificationsCount } from "../api/notificationsApi";
 
 // Adres backendu - uzywamy go glownie do sprawdzania sesji przez /api/auth/me
 const API_URL = "http://localhost:5000";
@@ -38,6 +40,9 @@ function App() {
     !!localStorage.getItem("token")
   );
 
+  // Liczba nieprzeczytanych powiadomien
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
   // Po starcie aplikacji albo po zmianie tokenu sprawdzamy,
   // czy sesja dalej jest wazna.
   // Jesli token jest poprawny, backend zwroci dane usera.
@@ -46,6 +51,7 @@ function App() {
     const loadCurrentUser = async () => {
       // Jak nie ma tokenu, to nie ma co sprawdzac
       if (!authToken) {
+        setUnreadNotificationsCount(0);
         setIsAuthLoading(false);
         return;
       }
@@ -65,6 +71,7 @@ function App() {
           localStorage.removeItem("token");
           setAuthToken("");
           setAuthenticatedUser(null);
+          setUnreadNotificationsCount(0);
           setCurrentRoute("login");
           setIsAuthLoading(false);
           return;
@@ -87,6 +94,7 @@ function App() {
         localStorage.removeItem("token");
         setAuthToken("");
         setAuthenticatedUser(null);
+        setUnreadNotificationsCount(0);
         setCurrentRoute("login");
         setIsAuthLoading(false);
       }
@@ -94,6 +102,29 @@ function App() {
 
     loadCurrentUser();
   }, [authToken]);
+
+  // Polling licznika nieprzeczytanych powiadomien
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      if (!authToken || !authenticatedUser) {
+        setUnreadNotificationsCount(0);
+        return;
+      }
+
+      try {
+        const data = await getUnreadNotificationsCount(authToken);
+        setUnreadNotificationsCount(data.unreadCount || 0);
+      } catch (error) {
+        // tutaj nic nie robimy, zeby nie spamowac usera komunikatem bledu
+      }
+    };
+
+    loadUnreadCount();
+
+    const intervalId = setInterval(loadUnreadCount, 15000);
+
+    return () => clearInterval(intervalId);
+  }, [authToken, authenticatedUser?.id]);
 
   // Ta funkcja uruchamia sie po poprawnym logowaniu z LoginPage.jsx.
   // Dostaje z backendu token i dane usera.
@@ -121,6 +152,7 @@ function App() {
     localStorage.removeItem("token");
     setAuthToken("");
     setAuthenticatedUser(null);
+    setUnreadNotificationsCount(0);
     setCurrentRoute("login");
   };
 
@@ -179,6 +211,7 @@ function App() {
             currentRoute={currentRoute}
             onNavigate={setCurrentRoute}
             authenticatedUser={authenticatedUser}
+            unreadNotificationsCount={unreadNotificationsCount}
           />
 
           <div className="flex-grow-1 p-4">
@@ -230,6 +263,7 @@ function App() {
                 currentRoute={currentRoute}
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
+                unreadNotificationsCount={unreadNotificationsCount}
               />
 
               <div className="flex-grow-1 p-4">
@@ -252,6 +286,7 @@ function App() {
                 currentRoute={currentRoute}
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
+                unreadNotificationsCount={unreadNotificationsCount}
               />
 
               <div className="flex-grow-1 p-4">
@@ -274,6 +309,7 @@ function App() {
                 currentRoute={currentRoute}
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
+                unreadNotificationsCount={unreadNotificationsCount}
               />
 
               {/* Prawdziwy widok listy uzytkownikow */}
@@ -291,7 +327,34 @@ function App() {
         return renderPlaceholder("CZAT");
 
       case "notifications":
-        return renderPlaceholder("POWIADOMIENIA");
+        return (
+          <div className="min-vh-100 bg-light">
+            <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+
+            <div className="d-flex">
+              <AppSidebar
+                currentRoute={currentRoute}
+                onNavigate={setCurrentRoute}
+                authenticatedUser={authenticatedUser}
+                unreadNotificationsCount={unreadNotificationsCount}
+              />
+
+              <div className="flex-grow-1 p-4">
+                <NotificationsPage
+                  authToken={authToken}
+                  onNotificationsChanged={async () => {
+                    try {
+                      const data = await getUnreadNotificationsCount(authToken);
+                      setUnreadNotificationsCount(data.unreadCount || 0);
+                    } catch (error) {
+                      // nic nie robimy
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        );
 
       case "admin-roles":
         return (
@@ -303,6 +366,7 @@ function App() {
                 currentRoute={currentRoute}
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
+                unreadNotificationsCount={unreadNotificationsCount}
               />
 
               {/* Prawdziwy widok zarzadzania rolami */}
