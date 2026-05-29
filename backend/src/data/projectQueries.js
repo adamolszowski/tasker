@@ -5,48 +5,48 @@ const sequelize = require("../db");
 
 async function findProjectStatuses() {
     const [rows] = await sequelize.query(
-       `
+        `
     SELECT id, name
     FROM project_statuses
     ORDER BY id ASC
     `
-);
+    );
 
- return rows;
+    return rows;
 }
 
 async function findProjectStatusById(statusId) {
     const [rows] = await sequelize.query(
-       `
+        `
     SELECT id, name
     FROM project_statuses
     WHERE id = :statusId
     LIMIT 1
     `,
-    {
-        replacements: { statusId },
-    }
+        {
+            replacements: { statusId },
+        }
     );
-    
+
     return rows[0] || null;
 }
 
 async function findDefaultProjectStatus() {
     const [rows] = await sequelize.query(
-     `
+        `
     SELECT id, name
     FROM project_statuses
     WHERE LOWER(name) = 'w toku'
     LIMIT 1
     `
     );
-    
+
     return rows[0] || null;
 }
 
 async function findProjectById(projectId, transaction = null) {
     const [rows] = await sequelize.query(
-  `
+        `
     SELECT
       p.id,
       p.name,
@@ -69,19 +69,19 @@ async function findProjectById(projectId, transaction = null) {
     WHERE p.id = :projectId
     LIMIT 1
     `,
-    {
-        replacements: { projectId },
-        transaction,
-    }
+        {
+            replacements: { projectId },
+            transaction,
+        }
     );
-    
+
     return rows[0] || null;
 }
 
-async function  findProjectsForUser(user) {
-if (user.role === "administrator" || user.role === "superadmin") {
-    const [rows] = await sequelize.query(
-         `
+async function findProjectsForUser(user) {
+    if (user.role === "administrator" || user.role === "superadmin") {
+        const [rows] = await sequelize.query(
+            `
       SELECT
         p.id,
         p.name,
@@ -103,14 +103,14 @@ if (user.role === "administrator" || user.role === "superadmin") {
       JOIN users u ON u.id = p.created_by_user_id
       ORDER BY p.created_at DESC
       `
-    );
+        );
 
-    return rows;
-}
+        return rows;
+    }
 
-if (user.role === "kierownik") {
-    const [rows] = await sequelize.query(
-        `
+    if (user.role === "kierownik") {
+        const [rows] = await sequelize.query(
+            `
       SELECT DISTINCT
         p.id,
         p.name,
@@ -131,19 +131,24 @@ if (user.role === "kierownik") {
       JOIN project_statuses ps ON ps.id = p.status_id
       JOIN users u ON u.id = p.created_by_user_id
       LEFT JOIN project_members pm ON pm.project_id = p.id
-      WHERE p.created_by_user_id = :userId OR pm.user_id = :userId
+      WHERE
+        p.created_by_user_id = :userId
+        OR (
+          pm.user_id = :userId
+          AND LOWER(ps.name) NOT IN ('usuniety', 'usunięty')
+        )
       ORDER BY p.created_at DESC
       `,
-      {
-        replacements: {userId: user.sub },
-      }
-    );
-    
-    return rows;
-}
+            {
+                replacements: { userId: user.sub },
+            }
+        );
 
-const [rows] = await sequelize.query(
-    `
+        return rows;
+    }
+
+    const [rows] = await sequelize.query(
+        `
     SELECT
       p.id,
       p.name,
@@ -165,19 +170,20 @@ const [rows] = await sequelize.query(
     JOIN users u ON u.id = p.created_by_user_id
     JOIN project_members pm ON pm.project_id = p.id
     WHERE pm.user_id = :userId
+      AND LOWER(ps.name) NOT IN ('usuniety', 'usunięty')
     ORDER BY p.created_at DESC
     `,
-    {
-        replacements: { userId: user.sub },
-    }
-);
+        {
+            replacements: { userId: user.sub },
+        }
+    );
 
-return rows;
+    return rows;
 }
 
 async function createProject({ name, description, createdByUserId, statusId }, transaction = null) {
-const [rows] = await sequelize.query(
-   `
+    const [rows] = await sequelize.query(
+        `
     INSERT INTO projects (
       name,
       description,
@@ -192,23 +198,23 @@ const [rows] = await sequelize.query(
     )
     RETURNING id, name, description, status_id, created_by_user_id, created_at, updated_at
     `,
-    {
-        replacements: {
-            name,
-            description,
-            statusId,
-            createdByUserId,
-        },
-        transaction,
-    }  
-);
+        {
+            replacements: {
+                name,
+                description,
+                statusId,
+                createdByUserId,
+            },
+            transaction,
+        }
+    );
 
-return rows[0] || null;
+    return rows[0] || null;
 }
 
-async function updateProject({ projectId, name , description}, transaction = null) {
+async function updateProject({ projectId, name, description }, transaction = null) {
     const [rows] = await sequelize.query(
-       `
+        `
     UPDATE projects
     SET
       name = :name,
@@ -216,23 +222,23 @@ async function updateProject({ projectId, name , description}, transaction = nul
       updated_at = CURRENT_TIMESTAMP
     WHERE id = :projectId
     RETURNING id, name, description, status_id, created_by_user_id, created_at, updated_at
-    `,  
-    {
-        replacements: {
-            projectId,
-            name,
-            description,
-        },
-        transaction,
-    }
-);
+    `,
+        {
+            replacements: {
+                projectId,
+                name,
+                description,
+            },
+            transaction,
+        }
+    );
 
     return rows[0] || null;
 }
 
-async function updateProjectStatus({ projectId, statusId}, transaction = null) {
+async function updateProjectStatus({ projectId, statusId }, transaction = null) {
     const [rows] = await sequelize.query(
-          `
+        `
     UPDATE projects
     SET
       status_id = :statusId,
@@ -240,13 +246,13 @@ async function updateProjectStatus({ projectId, statusId}, transaction = null) {
     WHERE id = :projectId
     RETURNING id, name, description, status_id, created_by_user_id, created_at, updated_at
     `,
-    {
-        replacements: {
-            projectId,
-            statusId,
-        },
-        transaction,
-    }
+        {
+            replacements: {
+                projectId,
+                statusId,
+            },
+            transaction,
+        }
     );
 
     return rows[0] || null;
@@ -272,36 +278,37 @@ async function findProjectMembers(projectId) {
     WHERE pm.project_id = :projectId
     ORDER BY pm.joined_at ASC
     `,
-    {
-        replacements: { projectId },
-    }
+        {
+            replacements: { projectId },
+        }
     );
 
     return rows;
 }
 
-async function  isUserProjectMember(projectId, userId) {
+async function isUserProjectMember(projectId, userId, transaction = null) {
     const [rows] = await sequelize.query(
-       `
+        `
     SELECT id
     FROM project_members
     WHERE project_id = :projectId AND user_id = :userId
     LIMIT 1
     `,
-    {
-        replacements: {
-            projectId,
-            userId,
-        },
-    } 
+        {
+            replacements: {
+                projectId,
+                userId,
+            },
+            transaction,
+        }
     );
 
     return Boolean(rows[0]);
 }
 
-async function addProjectMember({ projectId, userId, addedByUserId}, transaction = null) {
+async function addProjectMember({ projectId, userId, addedByUserId }, transaction = null) {
     const [rows] = await sequelize.query(
- `
+        `
     INSERT INTO project_members (
       project_id,
       user_id,
@@ -314,14 +321,14 @@ async function addProjectMember({ projectId, userId, addedByUserId}, transaction
     )
     RETURNING id, project_id, user_id, added_by_user_id, joined_at
     `,
-    {
-        replacements: {
-            projectId,
-            userId,
-            addedByUserId,
-        },
-        transaction,
-    }
+        {
+            replacements: {
+                projectId,
+                userId,
+                addedByUserId,
+            },
+            transaction,
+        }
     );
 
     return rows[0] || null;
@@ -334,13 +341,13 @@ async function removeProjectMember(projectId, userId, transaction = null) {
     WHERE project_id = :projectId AND user_id = :userId
     RETURNING id, project_id, user_id, added_by_user_id, joined_at
     `,
-    {
-        replacements: {
-            projectId,
-            userId,
-        },
-        transaction,
-        } 
+        {
+            replacements: {
+                projectId,
+                userId,
+            },
+            transaction,
+        }
     );
 
     return rows[0] || null;

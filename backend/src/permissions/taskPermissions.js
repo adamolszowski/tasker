@@ -1,75 +1,105 @@
 // plik odpowiada za przechowywanie funkcji ktore sprawdzaja czy dany uzytkownik moze cos zrobic
 
-// funkcja przyjmuje obiekt user, kontekst projektu, oraz to czy uzytkownik do niego nalezy
-function canViewTask (user, projectContext, isProjectMember) {
-    if (user.role === "administrator" || user.role === "superadmin") {
-        return true; // dla admina i superadmina zawsze mozna wyswietlac
+function isAdminLike(user) {
+    return user.role === "administrator" || user.role === "superadmin";
+}
+
+function getUserId(user) {
+    return Number(user?.id ?? user?.sub);
+}
+
+function isProjectOwner(user, projectContext) {
+    return Number(projectContext.created_by_user_id) === getUserId(user);
+}
+
+function isDeletedProject(projectContext) {
+    const statusName = String(projectContext?.status_name || projectContext?.statusName || "")
+        .trim()
+        .toLowerCase();
+
+    return statusName === "usuniety" || statusName === "usunięty";
+}
+
+function canUseDeletedProjectAsManager(user, projectContext) {
+    return user.role === "kierownik" && isProjectOwner(user, projectContext);
+}
+
+function canViewTask(user, projectContext, isProjectMember) {
+    if (!user || !projectContext) {
+        return false;
+    }
+
+    if (isAdminLike(user)) {
+        return true;
+    }
+
+    if (isDeletedProject(projectContext)) {
+        return canUseDeletedProjectAsManager(user, projectContext);
     }
 
     if (user.role === "kierownik") {
-        return (
-            projectContext.created_by_user_id === user.id ||
-            isProjectMember === true
-        ); // dla kierownika mozna jesli jest to projekt ktory stworzyl lub jest jego czlonkiem
+        return isProjectOwner(user, projectContext) || isProjectMember === true;
     }
 
     if (user.role === "pracownik") {
-        return isProjectMember === true; // dla pracownika mozna jesli jest czlonkiem projektu
-    }
-
-    return false; // jesli jest inaczej to nie mozna zobaczyc zadan
-}
-
-
-// funkcja sprawdza czy uzytkownik z obiektu user, w zaleznosci od kontekstu projektu
-// moze utworzyc zadanie
-function canCreateTask(user, projectContext) {
-    if (user.role === "administrator" || user.role === "superadmin") {
-        return true; // admin i superadmin zawsze moga
-    }
-
-    if (user.role === "kierownik") {
-        return projectContext.created_by_user_id === user.id;
-        // kierownik moze tylko w projektach ktore stworzyl
+        return isProjectMember === true;
     }
 
     return false;
 }
 
-// bazujemy na canCreateTask bo logika wyglada tak samo
+function canCreateTask(user, projectContext) {
+    if (!user || !projectContext) {
+        return false;
+    }
+
+    if (isAdminLike(user)) {
+        return true;
+    }
+
+    if (user.role === "kierownik") {
+        return isProjectOwner(user, projectContext);
+    }
+
+    return false;
+}
+
 function canEditTask(user, projectContext) {
     return canCreateTask(user, projectContext);
 }
 
-// bazujemy na canCreateTask bo logika wyglada tak samo
 function canDeleteTask(user, projectContext) {
     return canCreateTask(user, projectContext);
 }
 
-// badamy czy uzytkownik o danej roli mozne zmienic status podanego zadania w zaleznosci
-// od kontekstu
 function canChangeTaskStatus(user, task, projectContext) {
-    if (user.role === "administrator" || user.role === "superadmin") {
-        return true; // admin i superadmin zawsze moga
+    if (!user || !task || !projectContext) {
+        return false;
+    }
+
+    if (isAdminLike(user)) {
+        return true;
+    }
+
+    if (isDeletedProject(projectContext)) {
+        return canUseDeletedProjectAsManager(user, projectContext);
     }
 
     if (user.role === "kierownik") {
-        return projectContext.created_by_user_id === user.id;
-        // kierownik tylko wtedy jesli stworzyl ten projekt w ktorym jest zadanie
+        return isProjectOwner(user, projectContext);
     }
 
     if (user.role === "pracownik") {
-        return task.assigned_user_id === user.id;
-        // pracownik tylko wtedy jesli to zadanie jest do niego przypisane
+        return Number(task.assigned_user_id) === getUserId(user);
     }
 
     return false;
 }
 
 module.exports = {
-  canViewTask,
-  canCreateTask,
-  canEditTask,
-  canDeleteTask,
-  canChangeTaskStatus,
+    canViewTask,
+    canCreateTask,
+    canEditTask,
+    canDeleteTask,
+    canChangeTaskStatus,
 };

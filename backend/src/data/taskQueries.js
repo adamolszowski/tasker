@@ -199,6 +199,8 @@ async function findTasksForUser(user, filters = {}) {
     //replacements.statusId = 2;
     const replacements = {};
 
+    const activeProjectCondition = "LOWER(ps.name) NOT IN ('usuniety', 'usunięty')";
+
     //w tych ifach wstawiamy do conditions i replacements wartosci w zaleznosci
     //od tego co jest w filtrze
     if (filters.projectId) {
@@ -236,6 +238,7 @@ async function findTasksForUser(user, filters = {}) {
             `
         );
 
+        conditions.push(activeProjectCondition);
         replacements.currentUserId = user.id;
     }
 
@@ -246,13 +249,17 @@ async function findTasksForUser(user, filters = {}) {
         conditions.push(`
         (
             p.created_by_user_id = :currentUserId
-            OR EXISTS (
-            SELECT 1
-            FROM project_members pm
-            WHERE pm.project_id = t.project_id AND pm.user_id = :currentUserId
+            OR (
+                ${activeProjectCondition}
+                AND EXISTS (
+                    SELECT 1
+                    FROM project_members pm
+                    WHERE pm.project_id = t.project_id AND pm.user_id = :currentUserId
+                )
             )
         )
         `);
+
         replacements.currentUserId = user.id;
     }
 
@@ -286,6 +293,7 @@ async function findTasksForUser(user, filters = {}) {
         JOIN task_statuses ts ON ts.id = t.status_id
         JOIN task_priorities tp ON tp.id = t.priority_id
         JOIN projects p ON p.id = t.project_id
+        JOIN project_statuses ps ON ps.id = p.status_id
         LEFT JOIN users au ON au.id = t.assigned_user_id
         ${whereClause}
         ORDER BY t.created_at DESC, t.id DESC

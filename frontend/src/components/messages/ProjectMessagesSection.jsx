@@ -52,26 +52,47 @@ function ProjectMessagesSection({
   }, [authenticatedUser, canModerateMessages, isAdminLike]);
 
   useEffect(() => {
-    const loadMessages = async () => {
+    let intervalId = null;
+
+    const loadMessages = async (silent = false) => {
       if (!project || !project.id || !authToken) {
         setIsLoading(false);
         return;
       }
 
       try {
-        setIsLoading(true);
-        setErrorMessage("");
-        setSuccessMessage("");
+        if (!silent) {
+          setIsLoading(true);
+          setErrorMessage("");
+          setSuccessMessage("");
+        }
+
         const data = await getProjectMessages(authToken, project.id);
         setMessages(data.messages || []);
       } catch (error) {
-        setErrorMessage(error.message || "Nie udało się pobrać wiadomości projektu.");
+        if (!silent) {
+          setErrorMessage(
+            error.message || "Nie udało się pobrać wiadomości projektu.",
+          );
+        }
       } finally {
-        setIsLoading(false);
+        if (!silent) {
+          setIsLoading(false);
+        }
       }
     };
 
-    loadMessages();
+    loadMessages(false);
+
+    intervalId = window.setInterval(() => {
+      loadMessages(true);
+    }, 10000);
+
+    return () => {
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
   }, [authToken, project?.id]);
 
   const handleCreateMessage = async (event) => {
@@ -132,14 +153,16 @@ function ProjectMessagesSection({
 
       setMessages((prev) =>
         prev.map((message) =>
-          message.id === editingMessageId ? data.messageItem : message
-        )
+          message.id === editingMessageId ? data.messageItem : message,
+        ),
       );
       setEditingMessageId(null);
       setEditingContent("");
       setSuccessMessage(data.message || "Wiadomość została zaktualizowana.");
     } catch (error) {
-      setErrorMessage(error.message || "Nie udało się zaktualizować wiadomości.");
+      setErrorMessage(
+        error.message || "Nie udało się zaktualizować wiadomości.",
+      );
     } finally {
       setIsSubmitting(false);
     }

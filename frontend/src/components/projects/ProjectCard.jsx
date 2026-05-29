@@ -13,10 +13,8 @@ function ProjectCard({
   canManageMembers,
   isStatusSubmitting,
   isMembersOpen,
-  isMessagesOpen,
   onEdit,
   onOpenMembers,
-  onOpenMessages,
   onChangeStatus,
 }) {
   const [statusDraft, setStatusDraft] = useState(project.status_id);
@@ -102,13 +100,6 @@ function ProjectCard({
             onClick={() => onOpenMembers(project)}
           >
             {canManageMembers ? "Członkowie" : "Podgląd członków"}
-          </Button>
-
-          <Button
-            variant={isMessagesOpen ? "dark" : "outline-dark"}
-            onClick={() => onOpenMessages(project)}
-          >
-            Wiadomości
           </Button>
         </Stack>
       </Card.Body>

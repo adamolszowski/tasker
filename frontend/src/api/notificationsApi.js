@@ -54,3 +54,15 @@ export function markAllNotificationsRead(authToken) {
     method: "PATCH",
   });
 }
+
+export function getUnreadChatNotificationsCount(authToken) {
+  return sendRequest(authToken, "/api/notifications/chat/unread-count", {
+    method: "GET",
+  });
+}
+
+export function markProjectMessagesNotificationsRead(authToken, projectId) {
+  return sendRequest(authToken, `/api/projects/${projectId}/messages/read`, {
+    method: "PATCH",
+  });
+}

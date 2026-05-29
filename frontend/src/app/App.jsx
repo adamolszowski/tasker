@@ -10,7 +10,12 @@ import ChangePasswordPage from "../pages/ChangePasswordPage";
 import ProjectsPage from "../pages/ProjectsPage";
 import TasksPage from "../pages/TasksPage";
 import NotificationsPage from "../pages/NotificationsPage";
-import { getUnreadNotificationsCount } from "../api/notificationsApi";
+import ChatPage from "../pages/ChatPage";
+import DashboardPage from "../pages/DashboardPage";
+import {
+  getUnreadNotificationsCount,
+  getUnreadChatNotificationsCount,
+} from "../api/notificationsApi";
 
 // Adres backendu - uzywamy go glownie do sprawdzania sesji przez /api/auth/me
 const API_URL = "http://localhost:5000";
@@ -31,17 +36,21 @@ function App() {
 
   // Token JWT - na starcie probujemy go pobrac z localStorage
   const [authToken, setAuthToken] = useState(
-    localStorage.getItem("token") || ""
+    localStorage.getItem("token") || "",
   );
 
   // Flaga informujaca, czy trwa sprawdzanie sesji po odswiezeniu strony
   // Dzieki temu nie miga przez chwile ekran logowania
   const [isAuthLoading, setIsAuthLoading] = useState(
-    !!localStorage.getItem("token")
+    !!localStorage.getItem("token"),
   );
 
   // Liczba nieprzeczytanych powiadomien
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
+  // Liczba nieprzeczytanych powiadomien z czatu
+  const [unreadChatNotificationsCount, setUnreadChatNotificationsCount] =
+    useState(0);
 
   // Po starcie aplikacji albo po zmianie tokenu sprawdzamy,
   // czy sesja dalej jest wazna.
@@ -52,6 +61,7 @@ function App() {
       // Jak nie ma tokenu, to nie ma co sprawdzac
       if (!authToken) {
         setUnreadNotificationsCount(0);
+        setUnreadChatNotificationsCount(0);
         setIsAuthLoading(false);
         return;
       }
@@ -72,6 +82,7 @@ function App() {
           setAuthToken("");
           setAuthenticatedUser(null);
           setUnreadNotificationsCount(0);
+          setUnreadChatNotificationsCount(0);
           setCurrentRoute("login");
           setIsAuthLoading(false);
           return;
@@ -95,6 +106,7 @@ function App() {
         setAuthToken("");
         setAuthenticatedUser(null);
         setUnreadNotificationsCount(0);
+        setUnreadChatNotificationsCount(0);
         setCurrentRoute("login");
         setIsAuthLoading(false);
       }
@@ -104,24 +116,31 @@ function App() {
   }, [authToken]);
 
   // Polling licznika nieprzeczytanych powiadomien
+  const refreshUnreadCounts = async () => {
+    if (!authToken || !authenticatedUser) {
+      setUnreadNotificationsCount(0);
+      setUnreadChatNotificationsCount(0);
+      return;
+    }
+
+    try {
+      const [notificationsData, chatData] = await Promise.all([
+        getUnreadNotificationsCount(authToken),
+        getUnreadChatNotificationsCount(authToken),
+      ]);
+
+      setUnreadNotificationsCount(notificationsData.unreadCount || 0);
+      setUnreadChatNotificationsCount(chatData.unreadCount || 0);
+    } catch (error) {
+      // Nie spamujemy użytkownika błędem pollingu.
+    }
+  };
+
+  // Polling liczników: ogólne powiadomienia + czat
   useEffect(() => {
-    const loadUnreadCount = async () => {
-      if (!authToken || !authenticatedUser) {
-        setUnreadNotificationsCount(0);
-        return;
-      }
+    refreshUnreadCounts();
 
-      try {
-        const data = await getUnreadNotificationsCount(authToken);
-        setUnreadNotificationsCount(data.unreadCount || 0);
-      } catch (error) {
-        // tutaj nic nie robimy, zeby nie spamowac usera komunikatem bledu
-      }
-    };
-
-    loadUnreadCount();
-
-    const intervalId = setInterval(loadUnreadCount, 15000);
+    const intervalId = setInterval(refreshUnreadCounts, 15000);
 
     return () => clearInterval(intervalId);
   }, [authToken, authenticatedUser?.id]);
@@ -153,6 +172,7 @@ function App() {
     setAuthToken("");
     setAuthenticatedUser(null);
     setUnreadNotificationsCount(0);
+    setUnreadChatNotificationsCount(0);
     setCurrentRoute("login");
   };
 
@@ -186,12 +206,12 @@ function App() {
           authenticatedUser.role === "pracownik"
             ? "Pracownik"
             : authenticatedUser.role === "kierownik"
-            ? "Kierownik"
-            : authenticatedUser.role === "administrator"
-            ? "Administrator"
-            : authenticatedUser.role === "superadmin"
-            ? "Superadministrator"
-            : "Użytkownik",
+              ? "Kierownik"
+              : authenticatedUser.role === "administrator"
+                ? "Administrator"
+                : authenticatedUser.role === "superadmin"
+                  ? "Superadministrator"
+                  : "Użytkownik",
       }
     : {
         name: "Gość",
@@ -212,6 +232,7 @@ function App() {
             onNavigate={setCurrentRoute}
             authenticatedUser={authenticatedUser}
             unreadNotificationsCount={unreadNotificationsCount}
+            unreadChatNotificationsCount={unreadChatNotificationsCount}
           />
 
           <div className="flex-grow-1 p-4">
@@ -250,8 +271,30 @@ function App() {
           />
         );
 
-      case "dashboard":
-        return renderPlaceholder("PRZEGLĄD");
+case "dashboard":
+  return (
+    <div className="min-vh-100 bg-light">
+      <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+
+      <div className="d-flex">
+        <AppSidebar
+          currentRoute={currentRoute}
+          onNavigate={setCurrentRoute}
+          authenticatedUser={authenticatedUser}
+          unreadNotificationsCount={unreadNotificationsCount}
+          unreadChatNotificationsCount={unreadChatNotificationsCount}
+        />
+
+        <div className="flex-grow-1 p-4">
+          <DashboardPage
+            authToken={authToken}
+            authenticatedUser={authenticatedUser}
+            onNavigate={setCurrentRoute}
+          />
+        </div>
+      </div>
+    </div>
+  );
 
       case "projects":
         return (
@@ -264,6 +307,7 @@ function App() {
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
                 unreadNotificationsCount={unreadNotificationsCount}
+                unreadChatNotificationsCount={unreadChatNotificationsCount}
               />
 
               <div className="flex-grow-1 p-4">
@@ -287,6 +331,7 @@ function App() {
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
                 unreadNotificationsCount={unreadNotificationsCount}
+                unreadChatNotificationsCount={unreadChatNotificationsCount}
               />
 
               <div className="flex-grow-1 p-4">
@@ -310,6 +355,7 @@ function App() {
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
                 unreadNotificationsCount={unreadNotificationsCount}
+                unreadChatNotificationsCount={unreadChatNotificationsCount}
               />
 
               {/* Prawdziwy widok listy uzytkownikow */}
@@ -324,7 +370,29 @@ function App() {
         );
 
       case "chat":
-        return renderPlaceholder("CZAT");
+        return (
+          <div className="min-vh-100 bg-light">
+            <AppHeader currentUser={currentUser} onLogout={handleLogout} />
+
+            <div className="d-flex">
+              <AppSidebar
+                currentRoute={currentRoute}
+                onNavigate={setCurrentRoute}
+                authenticatedUser={authenticatedUser}
+                unreadNotificationsCount={unreadNotificationsCount}
+                unreadChatNotificationsCount={unreadChatNotificationsCount}
+              />
+
+              <div className="flex-grow-1 p-4">
+                <ChatPage
+                  authToken={authToken}
+                  authenticatedUser={authenticatedUser}
+                  onChatNotificationsChanged={refreshUnreadCounts}
+                />
+              </div>
+            </div>
+          </div>
+        );
 
       case "notifications":
         return (
@@ -337,19 +405,13 @@ function App() {
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
                 unreadNotificationsCount={unreadNotificationsCount}
+                unreadChatNotificationsCount={unreadChatNotificationsCount}
               />
 
               <div className="flex-grow-1 p-4">
                 <NotificationsPage
                   authToken={authToken}
-                  onNotificationsChanged={async () => {
-                    try {
-                      const data = await getUnreadNotificationsCount(authToken);
-                      setUnreadNotificationsCount(data.unreadCount || 0);
-                    } catch (error) {
-                      // nic nie robimy
-                    }
-                  }}
+                  onNotificationsChanged={refreshUnreadCounts}
                 />
               </div>
             </div>
@@ -367,6 +429,7 @@ function App() {
                 onNavigate={setCurrentRoute}
                 authenticatedUser={authenticatedUser}
                 unreadNotificationsCount={unreadNotificationsCount}
+                unreadChatNotificationsCount={unreadChatNotificationsCount}
               />
 
               {/* Prawdziwy widok zarzadzania rolami */}

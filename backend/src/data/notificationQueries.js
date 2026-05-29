@@ -93,6 +93,49 @@ async function countUnreadNotifications(userId, transaction = null) {
   return rows[0]?.unread_count || 0;
 }
 
+async function countUnreadProjectMessageNotifications(userId, transaction = null) {
+  const [rows] = await sequelize.query(
+    `
+    SELECT COUNT(*)::int AS unread_count
+    FROM notifications
+    WHERE user_id = :userId
+      AND is_read = FALSE
+      AND type = 'project_message_added'
+    `,
+    {
+      replacements: { userId },
+      transaction,
+    }
+  );
+
+  return rows[0]?.unread_count || 0;
+}
+
+async function markProjectMessageNotificationsAsRead(projectId, userId, transaction = null) {
+  const [rows] = await sequelize.query(
+    `
+    UPDATE notifications
+    SET
+      is_read = TRUE,
+      read_at = CURRENT_TIMESTAMP
+    WHERE user_id = :userId
+      AND project_id = :projectId
+      AND type = 'project_message_added'
+      AND is_read = FALSE
+    RETURNING id
+    `,
+    {
+      replacements: {
+        projectId,
+        userId,
+      },
+      transaction,
+    }
+  );
+
+  return rows.length;
+}
+
 async function markNotificationAsRead(notificationId, userId, transaction = null) {
   const [rows] = await sequelize.query(
     `
@@ -140,6 +183,8 @@ module.exports = {
   findNotificationsForUser,
   findNotificationById,
   countUnreadNotifications,
+  countUnreadProjectMessageNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  markProjectMessageNotificationsAsRead,
 };

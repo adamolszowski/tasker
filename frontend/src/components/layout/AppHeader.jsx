@@ -9,7 +9,13 @@ import Badge from "react-bootstrap/Badge";
 // oraz przycisk do wylogowania.
 function AppHeader({ currentUser, onLogout }) {
   // Bierzemy aktualna date w polskim formacie
-  const now = new Date().toLocaleDateString("pl-PL");
+  const now = new Date().toLocaleString("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   return (
     <Navbar bg="white" className="border-bottom px-4 py-3">

@@ -5,24 +5,44 @@ function isAdminLike(user) {
     return user.role === "administrator" || user.role === "superadmin";
 }
 
-function canViewProject(user , project, isMember = false) {
+function getUserId(user) {
+    return Number(user?.sub ?? user?.id);
+}
+
+function isProjectOwner(user, project) {
+    return Number(project.created_by_user_id) === getUserId(user);
+}
+
+function isDeletedProject(project) {
+    const statusName = String(project?.status_name || project?.statusName || "")
+        .trim()
+        .toLowerCase();
+
+    return statusName === "usuniety" || statusName === "usunięty";
+}
+
+function canViewProject(user, project, isMember = false) {
     if (!user || !project) {
         return false;
     }
 
-     if (isAdminLike(user)) {
+    if (isAdminLike(user)) {
         return true;
-     }
+    }
 
-     if (user.role === "kierownik") {
-        return project.created_by_user_id === user.sub || isMember;
-     }
+    if (isDeletedProject(project)) {
+        return user.role === "kierownik" && isProjectOwner(user, project);
+    }
 
-     if (user.role === "pracownik") {
+    if (user.role === "kierownik") {
+        return isProjectOwner(user, project) || isMember;
+    }
+
+    if (user.role === "pracownik") {
         return isMember;
-     }
+    }
 
-     return false;
+    return false;
 }
 
 function canCreateProject(user) {
@@ -47,19 +67,19 @@ function canEditProject(user, project) {
     }
 
     if (user.role === "kierownik") {
-    return project.created_by_user_id === user.sub;
+        return isProjectOwner(user, project);
     }
 
     return false;
 }
 
-    function canChangeProjectStatus(user, project) {
-        return canEditProject(user, project);
-    }
+function canChangeProjectStatus(user, project) {
+    return canEditProject(user, project);
+}
 
-    function canManageProjectMembers(user, project) {
-        return canEditProject(user, project);
-    }
+function canManageProjectMembers(user, project) {
+    return canEditProject(user, project);
+}
 
 module.exports = {
     canViewProject,
@@ -67,4 +87,4 @@ module.exports = {
     canEditProject,
     canChangeProjectStatus,
     canManageProjectMembers,
-} ;
+};

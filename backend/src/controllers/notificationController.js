@@ -3,9 +3,20 @@ const {
   findNotificationsForUser,
   findNotificationById,
   countUnreadNotifications,
+  countUnreadProjectMessageNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  markProjectMessageNotificationsAsRead,
 } = require("../data/notificationQueries");
+
+const {
+  findProjectById,
+  isUserProjectMember,
+} = require("../data/projectQueries");
+
+const {
+  canViewProjectMessages,
+} = require("../permissions/messagePermissions");
 
 function mapNotificationRow(notification) {
   return {
@@ -57,6 +68,79 @@ async function getUnreadNotificationsCount(req, res) {
   } catch (error) {
     return res.status(500).json({
       message: "Błąd podczas pobierania licznika powiadomień.",
+      error: error.message,
+    });
+  }
+}
+
+async function getUnreadChatNotificationsCount(req, res) {
+  try {
+    const unreadCount = await countUnreadProjectMessageNotifications(req.auth.sub);
+
+    return res.status(200).json({
+      unreadCount,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Błąd podczas pobierania licznika wiadomości czatu.",
+      error: error.message,
+    });
+  }
+}
+
+async function markProjectChatNotificationsReadHandler(req, res) {
+  const projectId = Number(req.params.projectId);
+
+  if (!projectId || Number.isNaN(projectId)) {
+    return res.status(400).json({
+      message: "Nieprawidłowe ID projektu.",
+    });
+  }
+
+  const transaction = await sequelize.transaction();
+
+  try {
+    const project = await findProjectById(projectId, transaction);
+
+    if (!project) {
+      await transaction.rollback();
+      return res.status(404).json({
+        message: "Projekt nie istnieje.",
+      });
+    }
+
+    const isMember = await isUserProjectMember(projectId, req.auth.sub, transaction);
+
+    if (
+      !canViewProjectMessages(
+        { id: req.auth.sub, role: req.auth.role },
+        project,
+        isMember
+      )
+    ) {
+      await transaction.rollback();
+      return res.status(403).json({
+        message: "Brak uprawnień do czatu tego projektu.",
+      });
+    }
+
+    const updatedCount = await markProjectMessageNotificationsAsRead(
+      projectId,
+      req.auth.sub,
+      transaction
+    );
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      message: "Powiadomienia czatu projektu zostały oznaczone jako przeczytane.",
+      updatedCount,
+    });
+  } catch (error) {
+    await transaction.rollback();
+
+    return res.status(500).json({
+      message: "Błąd podczas oznaczania powiadomień czatu.",
       error: error.message,
     });
   }
@@ -124,6 +208,8 @@ async function markAllNotificationsReadHandler(req, res) {
 module.exports = {
   getNotifications,
   getUnreadNotificationsCount,
+  getUnreadChatNotificationsCount,
   markNotificationRead: markNotificationReadHandler,
   markAllNotificationsRead: markAllNotificationsReadHandler,
+  markProjectChatNotificationsRead: markProjectChatNotificationsReadHandler,
 };

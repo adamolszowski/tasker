@@ -34,6 +34,7 @@ function AppSidebar({
   onNavigate,
   authenticatedUser,
   unreadNotificationsCount = 0,
+  unreadChatNotificationsCount = 0,
 }) {
   const userRole = authenticatedUser?.role;
 
@@ -103,6 +104,7 @@ function AppSidebar({
             label="Czat"
             isActive={currentRoute === "chat"}
             onClick={() => onNavigate("chat")}
+            badge={unreadChatNotificationsCount > 0 ? unreadChatNotificationsCount : null}
           />
 
           {/* Powiadomienia */}

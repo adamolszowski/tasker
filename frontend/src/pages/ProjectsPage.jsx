@@ -10,7 +10,6 @@ import Col from "react-bootstrap/Col";
 import ProjectForm from "../components/projects/ProjectForm";
 import ProjectCard from "../components/projects/ProjectCard";
 import ProjectMembersPanel from "../components/projects/ProjectMembersPanel";
-import ProjectMessagesSection from "../components/messages/ProjectMessagesSection";
 import {
   getProjects,
   getProjectStatuses,
@@ -29,7 +28,6 @@ function ProjectsPage({ authToken, authenticatedUser }) {
   const [users, setUsers] = useState([]);
   const [members, setMembers] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [selectedProjectForMessages, setSelectedProjectForMessages] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
@@ -189,10 +187,6 @@ function ProjectsPage({ authToken, authenticatedUser }) {
         setSelectedProject(data.project);
       }
 
-      if (selectedProjectForMessages?.id === projectId) {
-        setSelectedProjectForMessages(data.project);
-      }
-
       setSuccessMessage(data.message || "Status projektu został zmieniony.");
     } catch (error) {
       setErrorMessage(error.message || "Nie udało się zmienić statusu projektu.");
@@ -215,11 +209,6 @@ function ProjectsPage({ authToken, authenticatedUser }) {
     } finally {
       setIsMembersLoading(false);
     }
-  };
-
-  const handleOpenMessages = (project) => {
-    resetMessages();
-    setSelectedProjectForMessages(project);
   };
 
   const handleAddMember = async (userId) => {
@@ -349,10 +338,8 @@ function ProjectsPage({ authToken, authenticatedUser }) {
                 canManageMembers={canEditProject(project)}
                 isStatusSubmitting={statusChangingProjectId === project.id}
                 isMembersOpen={selectedProject?.id === project.id}
-                isMessagesOpen={selectedProjectForMessages?.id === project.id}
                 onEdit={openEditForm}
                 onOpenMembers={handleOpenMembers}
-                onOpenMessages={handleOpenMessages}
                 onChangeStatus={handleChangeStatus}
               />
             </Col>
@@ -375,16 +362,6 @@ function ProjectsPage({ authToken, authenticatedUser }) {
             setSelectedProject(null);
             setMembers([]);
           }}
-        />
-      )}
-
-      {selectedProjectForMessages && (
-        <ProjectMessagesSection
-          authToken={authToken}
-          project={selectedProjectForMessages}
-          authenticatedUser={authenticatedUser}
-          canModerateMessages={canEditProject(selectedProjectForMessages)}
-          onClose={() => setSelectedProjectForMessages(null)}
         />
       )}
     </div>
