@@ -1,59 +1,39 @@
 const sequelize = require("../db");
+const { TaskStatus, TaskPriority } = require("../models");
 
-// zapytanie pobierajace id oraz name dla wszystkich mozliwych statusy zadan
+// Statusy i priorytety zadań pobieramy przez modele Sequelize ORM.
 async function findTaskStatuses() {
-    const [rows] = await sequelize.query(
-        `
-        SELECT id, name
-        FROM task_statuses
-        ORDER BY id ASC
-        `
-    );
-
-    return rows;
+    return TaskStatus.findAll({
+        attributes: ["id", "name"],
+        order: [["id", "ASC"]],
+        raw: true,
+    });
 }
 
-// zapytanie do pobierania id oraz name wszystkich mozliwich priorytetow zadan
 async function findTaskPriorities() {
-    const [rows] = await sequelize.query(`
-    SELECT id, name
-    FROM task_priorities
-    ORDER BY id ASC
-  `);
-
-    return rows;
+    return TaskPriority.findAll({
+        attributes: ["id", "name"],
+        order: [["id", "ASC"]],
+        raw: true,
+    });
 }
 
-// zapytanie do znajdowania bazowego statusu zadania, funkcja moze dostac transakcje, ale nie musi
 async function findDefaultTaskStatus(transaction = null) {
-    const [rows] = await sequelize.query(
-        `
-        SELECT id, name
-        FROM task_statuses
-        WHERE name = 'Do zrobienia'
-        LIMIT 1
-        `, {
-        transaction
-    }
-    );
-
-    return rows[0] || null;
+    return TaskStatus.findOne({
+        attributes: ["id", "name"],
+        where: { name: "Do zrobienia" },
+        transaction,
+        raw: true,
+    });
 }
 
-// zapytanie do znajdowania bazowego priorytetu zadania, 
-// funkcja moze dostac transakcje, ale nie musi, może zwrócić null
 async function findDefaultTaskPriority(transaction = null) {
-    const [rows] = await sequelize.query(
-        `
-    SELECT id, name
-    FROM task_priorities
-    WHERE name = 'średni'
-    LIMIT 1
-    `,
-        { transaction }
-    );
-
-    return rows[0] || null;
+    return TaskPriority.findOne({
+        attributes: ["id", "name"],
+        where: { name: "średni" },
+        transaction,
+        raw: true,
+    });
 }
 
 // zapytanie do zwracania informacji o projekcie poprzez podanie id projektu

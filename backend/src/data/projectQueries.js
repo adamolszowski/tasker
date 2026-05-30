@@ -2,46 +2,29 @@
 // Trzymamy tu tylko SQL i nic więcej.
 
 const sequelize = require("../db");
+const { ProjectStatus } = require("../models");
 
 async function findProjectStatuses() {
-    const [rows] = await sequelize.query(
-        `
-    SELECT id, name
-    FROM project_statuses
-    ORDER BY id ASC
-    `
-    );
-
-    return rows;
+    return ProjectStatus.findAll({
+        attributes: ["id", "name"],
+        order: [["id", "ASC"]],
+        raw: true,
+    });
 }
 
 async function findProjectStatusById(statusId) {
-    const [rows] = await sequelize.query(
-        `
-    SELECT id, name
-    FROM project_statuses
-    WHERE id = :statusId
-    LIMIT 1
-    `,
-        {
-            replacements: { statusId },
-        }
-    );
-
-    return rows[0] || null;
+    return ProjectStatus.findByPk(statusId, {
+        attributes: ["id", "name"],
+        raw: true,
+    });
 }
 
 async function findDefaultProjectStatus() {
-    const [rows] = await sequelize.query(
-        `
-    SELECT id, name
-    FROM project_statuses
-    WHERE LOWER(name) = 'w toku'
-    LIMIT 1
-    `
-    );
-
-    return rows[0] || null;
+    return ProjectStatus.findOne({
+        attributes: ["id", "name"],
+        where: sequelize.where(sequelize.fn("LOWER", sequelize.col("name")), "w toku"),
+        raw: true,
+    });
 }
 
 async function findProjectById(projectId, transaction = null) {

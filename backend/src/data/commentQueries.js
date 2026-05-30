@@ -1,4 +1,32 @@
 const sequelize = require("../db");
+const { TaskComment, User, Role } = require("../models");
+
+function toPlain(modelInstance) {
+  if (!modelInstance) {
+    return null;
+  }
+
+  if (typeof modelInstance.get === "function") {
+    return modelInstance.get({ plain: true });
+  }
+
+  return modelInstance;
+}
+
+function flattenCommentWithAuthor(modelInstance) {
+  const comment = toPlain(modelInstance);
+
+  if (!comment) {
+    return null;
+  }
+
+  return {
+    ...comment,
+    first_name: comment.author?.first_name || null,
+    last_name: comment.author?.last_name || null,
+    role_name: comment.author?.role?.name || null,
+  };
+}
 
 async function findCommentsByTaskId(taskId, transaction = null) {
   const [rows] = await sequelize.query(
@@ -30,93 +58,68 @@ async function findCommentsByTaskId(taskId, transaction = null) {
 }
 
 async function findCommentById(commentId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    SELECT
-      c.id,
-      c.task_id,
-      c.user_id,
-      c.content,
-      c.is_edited,
-      c.created_at,
-      c.updated_at,
-      u.first_name,
-      u.last_name,
-      r.name AS role_name
-    FROM task_comments c
-    JOIN users u ON u.id = c.user_id
-    LEFT JOIN roles r ON r.id = u.role_id
-    WHERE c.id = :commentId
-    LIMIT 1
-    `,
-    {
-      replacements: { commentId },
-      transaction,
-    }
-  );
+  const comment = await TaskComment.findByPk(commentId, {
+    include: [
+      {
+        model: User,
+        as: "author",
+        attributes: ["id", "first_name", "last_name", "role_id"],
+        required: true,
+        include: [
+          {
+            model: Role,
+            as: "role",
+            attributes: ["id", "name"],
+            required: false,
+          },
+        ],
+      },
+    ],
+    transaction,
+  });
 
-  return rows[0] || null;
+  return flattenCommentWithAuthor(comment);
 }
 
 async function createComment(data, transaction) {
-  const [rows] = await sequelize.query(
-    `
-    INSERT INTO task_comments (
-      task_id,
-      user_id,
-      content
-    )
-    VALUES (
-      :taskId,
-      :userId,
-      :content
-    )
-    RETURNING id
-    `,
+  const comment = await TaskComment.create(
     {
-      replacements: {
-        taskId: data.taskId,
-        userId: data.userId,
-        content: data.content,
-      },
+      task_id: data.taskId,
+      user_id: data.userId,
+      content: data.content,
+    },
+    {
       transaction,
+      returning: true,
     }
   );
 
-  return rows[0] || null;
+  const created = toPlain(comment);
+
+  return {
+    id: created.id,
+  };
 }
 
 async function updateComment(commentId, content, transaction) {
-  await sequelize.query(
-    `
-    UPDATE task_comments
-    SET
-      content = :content,
-      is_edited = TRUE,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = :commentId
-    `,
+  await TaskComment.update(
     {
-      replacements: {
-        commentId,
-        content,
-      },
+      content,
+      is_edited: true,
+      updated_at: new Date(),
+    },
+    {
+      where: { id: commentId },
       transaction,
     }
   );
 }
 
 async function deleteComment(commentId, transaction) {
-  await sequelize.query(
-    `
-    DELETE FROM task_comments
-    WHERE id = :commentId
-    `,
-    {
-      replacements: { commentId },
-      transaction,
-    }
-  );
+  await TaskComment.destroy({
+    where: { id: commentId },
+    transaction,
+  });
 }
 
 module.exports = {

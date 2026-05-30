@@ -1,4 +1,17 @@
 const sequelize = require("../db");
+const { Notification } = require("../models");
+
+function toPlain(modelInstance) {
+  if (!modelInstance) {
+    return null;
+  }
+
+  if (typeof modelInstance.get === "function") {
+    return modelInstance.get({ plain: true });
+  }
+
+  return modelInstance;
+}
 
 async function findNotificationsForUser(userId, options = {}, transaction = null) {
   const unreadOnly = options.unreadOnly === true;
@@ -50,133 +63,93 @@ async function findNotificationsForUser(userId, options = {}, transaction = null
 }
 
 async function findNotificationById(notificationId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    SELECT
-      id,
-      user_id,
-      task_id,
-      project_id,
-      type,
-      title,
-      content,
-      is_read,
-      read_at,
-      created_at
-    FROM notifications
-    WHERE id = :notificationId
-    LIMIT 1
-    `,
-    {
-      replacements: { notificationId },
-      transaction,
-    }
-  );
+  const notification = await Notification.findByPk(notificationId, {
+    transaction,
+  });
 
-  return rows[0] || null;
+  return toPlain(notification);
 }
 
 async function countUnreadNotifications(userId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    SELECT COUNT(*)::int AS unread_count
-    FROM notifications
-    WHERE user_id = :userId
-      AND is_read = FALSE
-    `,
-    {
-      replacements: { userId },
-      transaction,
-    }
-  );
-
-  return rows[0]?.unread_count || 0;
+  return Notification.count({
+    where: {
+      user_id: userId,
+      is_read: false,
+    },
+    transaction,
+  });
 }
 
 async function countUnreadProjectMessageNotifications(userId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    SELECT COUNT(*)::int AS unread_count
-    FROM notifications
-    WHERE user_id = :userId
-      AND is_read = FALSE
-      AND type = 'project_message_added'
-    `,
-    {
-      replacements: { userId },
-      transaction,
-    }
-  );
-
-  return rows[0]?.unread_count || 0;
+  return Notification.count({
+    where: {
+      user_id: userId,
+      is_read: false,
+      type: "project_message_added",
+    },
+    transaction,
+  });
 }
 
 async function markProjectMessageNotificationsAsRead(projectId, userId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    UPDATE notifications
-    SET
-      is_read = TRUE,
-      read_at = CURRENT_TIMESTAMP
-    WHERE user_id = :userId
-      AND project_id = :projectId
-      AND type = 'project_message_added'
-      AND is_read = FALSE
-    RETURNING id
-    `,
+  const [updatedCount] = await Notification.update(
     {
-      replacements: {
-        projectId,
-        userId,
+      is_read: true,
+      read_at: new Date(),
+    },
+    {
+      where: {
+        user_id: userId,
+        project_id: projectId,
+        type: "project_message_added",
+        is_read: false,
       },
       transaction,
     }
   );
 
-  return rows.length;
+  return updatedCount;
 }
 
 async function markNotificationAsRead(notificationId, userId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    UPDATE notifications
-    SET
-      is_read = TRUE,
-      read_at = CURRENT_TIMESTAMP
-    WHERE id = :notificationId
-      AND user_id = :userId
-    RETURNING id, is_read, read_at
-    `,
+  const [updatedCount, updatedRows] = await Notification.update(
     {
-      replacements: {
-        notificationId,
-        userId,
+      is_read: true,
+      read_at: new Date(),
+    },
+    {
+      where: {
+        id: notificationId,
+        user_id: userId,
+      },
+      returning: true,
+      transaction,
+    }
+  );
+
+  if (updatedCount === 0) {
+    return null;
+  }
+
+  return toPlain(updatedRows[0]);
+}
+
+async function markAllNotificationsAsRead(userId, transaction = null) {
+  const [updatedCount] = await Notification.update(
+    {
+      is_read: true,
+      read_at: new Date(),
+    },
+    {
+      where: {
+        user_id: userId,
+        is_read: false,
       },
       transaction,
     }
   );
 
-  return rows[0] || null;
-}
-
-async function markAllNotificationsAsRead(userId, transaction = null) {
-  const [rows] = await sequelize.query(
-    `
-    UPDATE notifications
-    SET
-      is_read = TRUE,
-      read_at = CURRENT_TIMESTAMP
-    WHERE user_id = :userId
-      AND is_read = FALSE
-    RETURNING id
-    `,
-    {
-      replacements: { userId },
-      transaction,
-    }
-  );
-
-  return rows.length;
+  return updatedCount;
 }
 
 module.exports = {
